@@ -206,6 +206,69 @@ describe("web_search perplexity baseUrl defaults", () => {
   });
 });
 
+describe("web_search openai defaults", () => {
+  const priorFetch = global.fetch;
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    global.fetch = priorFetch;
+  });
+
+  it("defaults to OpenAI when OPENAI_API_KEY is set", async () => {
+    vi.stubEnv("OPENAI_API_KEY", "sk-test");
+    const mockFetch = installMockFetch({ output_text: "ok" });
+
+    const tool = createWebSearchTool({
+      config: undefined,
+      sandboxed: true,
+      modelProvider: "openai",
+      modelId: "gpt-5.2",
+    });
+    await tool?.execute?.("call-1", { query: "test-openai" });
+
+    expect(mockFetch).toHaveBeenCalled();
+    expect(mockFetch.mock.calls[0]?.[0]).toBe("https://api.openai.com/v1/responses");
+  });
+
+  it("falls back when OpenAI does not support web_search", async () => {
+    vi.stubEnv("OPENAI_API_KEY", "sk-test");
+    vi.stubEnv("BRAVE_API_KEY", "brave-test");
+    const mockFetch = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/responses")) {
+        return Promise.resolve({
+          ok: false,
+          status: 400,
+          statusText: "Bad Request",
+          text: () =>
+            Promise.resolve(
+              JSON.stringify({
+                error: { message: "web_search not supported", code: "unsupported_tool" },
+              }),
+            ),
+        } as Response);
+      }
+      return Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({ web: { results: [] } }),
+      } as Response);
+    });
+    global.fetch = withFetchPreconnect(mockFetch);
+
+    const tool = createWebSearchTool({
+      config: undefined,
+      sandboxed: true,
+      modelProvider: "openai",
+      modelId: "gpt-5.2",
+    });
+    await tool?.execute?.("call-1", { query: "test-openai-fallback" });
+
+    expect(mockFetch).toHaveBeenCalled();
+    expect(mockFetch.mock.calls[0]?.[0]).toBe("https://api.openai.com/v1/responses");
+    expect(mockFetch.mock.calls[1]?.[0]).toContain("api.search.brave.com");
+  });
+});
+
 describe("web_search external content wrapping", () => {
   const priorFetch = global.fetch;
 

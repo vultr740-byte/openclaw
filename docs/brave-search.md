@@ -8,7 +8,7 @@ title: "Brave Search"
 
 # Brave Search API
 
-OpenClaw uses Brave Search as the default provider for `web_search`.
+OpenClaw can use Brave Search for `web_search`. OpenAI is preferred when `OPENAI_API_KEY` is set, but Brave remains a fast structured option.
 
 ## Get an API key
 

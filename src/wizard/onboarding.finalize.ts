@@ -432,29 +432,88 @@ export async function finalizeOnboardingWizard(
     );
   }
 
-  const webSearchKey = (nextConfig.tools?.web?.search?.apiKey ?? "").trim();
-  const webSearchEnv = (process.env.BRAVE_API_KEY ?? "").trim();
-  const hasWebSearchKey = Boolean(webSearchKey || webSearchEnv);
+  const webSearchConfig = nextConfig.tools?.web?.search;
+  const openaiKey = (webSearchConfig?.openai?.apiKey ?? "").trim();
+  const openaiModelKey = (nextConfig.models?.providers?.openai?.apiKey ?? "").trim();
+  const openaiEnv = (process.env.OPENAI_API_KEY ?? "").trim();
+  const braveKey = (webSearchConfig?.apiKey ?? "").trim();
+  const braveEnv = (process.env.BRAVE_API_KEY ?? "").trim();
+  const perplexityKey = (webSearchConfig?.perplexity?.apiKey ?? "").trim();
+  const perplexityEnv = (process.env.PERPLEXITY_API_KEY ?? "").trim();
+  const openRouterEnv = (process.env.OPENROUTER_API_KEY ?? "").trim();
+  const grokKey = (webSearchConfig?.grok?.apiKey ?? "").trim();
+  const grokEnv = (process.env.XAI_API_KEY ?? "").trim();
+  const provider =
+    typeof webSearchConfig?.provider === "string" && webSearchConfig.provider.trim()
+      ? webSearchConfig.provider.trim()
+      : openaiKey || openaiModelKey || openaiEnv
+        ? "openai"
+        : "brave";
+  const hasOpenAiKey = Boolean(openaiKey || openaiModelKey || openaiEnv);
+  const hasBraveKey = Boolean(braveKey || braveEnv);
+  const hasPerplexityKey = Boolean(perplexityKey || perplexityEnv || openRouterEnv);
+  const hasGrokKey = Boolean(grokKey || grokEnv);
+  const providerKey =
+    provider === "openai"
+      ? hasOpenAiKey
+      : provider === "perplexity"
+        ? hasPerplexityKey
+        : provider === "grok"
+          ? hasGrokKey
+          : hasBraveKey;
+  const providerLabel =
+    provider === "openai"
+      ? "OpenAI web_search"
+      : provider === "perplexity"
+        ? "Perplexity Sonar"
+        : provider === "grok"
+          ? "xAI Grok"
+          : "Brave Search";
+
+  const providerKeyLine =
+    provider === "openai"
+      ? openaiKey
+        ? "API key: stored in config (tools.web.search.openai.apiKey)."
+        : openaiModelKey
+          ? "API key: stored in models.providers.openai.apiKey."
+          : "API key: provided via OPENAI_API_KEY env var (Gateway environment)."
+      : provider === "perplexity"
+        ? perplexityKey
+          ? "API key: stored in config (tools.web.search.perplexity.apiKey)."
+          : openRouterEnv
+            ? "API key: provided via OPENROUTER_API_KEY env var (Gateway environment)."
+            : "API key: provided via PERPLEXITY_API_KEY env var (Gateway environment)."
+        : provider === "grok"
+          ? grokKey
+            ? "API key: stored in config (tools.web.search.grok.apiKey)."
+            : "API key: provided via XAI_API_KEY env var (Gateway environment)."
+          : braveKey
+            ? "API key: stored in config (tools.web.search.apiKey)."
+            : "API key: provided via BRAVE_API_KEY env var (Gateway environment).";
+
   await prompter.note(
-    hasWebSearchKey
+    providerKey
       ? [
           "Web search is enabled, so your agent can look things up online when needed.",
           "",
-          webSearchKey
-            ? "API key: stored in config (tools.web.search.apiKey)."
-            : "API key: provided via BRAVE_API_KEY env var (Gateway environment).",
+          `Provider: ${providerLabel}.`,
+          providerKeyLine,
           "Docs: https://docs.openclaw.ai/tools/web",
         ].join("\n")
       : [
           "If you want your agent to be able to search the web, you’ll need an API key.",
           "",
-          "OpenClaw uses Brave Search for the `web_search` tool. Without a Brave Search API key, web search won’t work.",
+          "OpenClaw prefers OpenAI web_search when available. You can also use Brave, Perplexity, or Grok.",
           "",
           "Set it up interactively:",
           `- Run: ${formatCliCommand("openclaw configure --section web")}`,
-          "- Enable web_search and paste your Brave Search API key",
+          "- Enable web_search and choose a provider",
           "",
-          "Alternative: set BRAVE_API_KEY in the Gateway environment (no config changes).",
+          "Env alternatives:",
+          "- OpenAI: OPENAI_API_KEY (or models.providers.openai.apiKey)",
+          "- Brave: BRAVE_API_KEY",
+          "- Perplexity: PERPLEXITY_API_KEY or OPENROUTER_API_KEY",
+          "- Grok: XAI_API_KEY",
           "Docs: https://docs.openclaw.ai/tools/web",
         ].join("\n"),
     "Web search (optional)",

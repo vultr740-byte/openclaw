@@ -1,7 +1,8 @@
 ---
-summary: "Web search + fetch tools (Brave Search API, Perplexity direct/OpenRouter)"
+summary: "Web search + fetch tools (OpenAI, Brave, Perplexity, Grok)"
 read_when:
   - You want to enable web_search or web_fetch
+  - You want to use OpenAI web_search
   - You need Brave Search API key setup
   - You want to use Perplexity Sonar for web search
 title: "Web Tools"
@@ -11,7 +12,7 @@ title: "Web Tools"
 
 OpenClaw ships two lightweight web tools:
 
-- `web_search` — Search the web via Brave Search API (default) or Perplexity Sonar (direct or via OpenRouter).
+- `web_search` — Search the web via OpenAI web_search (preferred when OPENAI_API_KEY is set), Brave Search API, Perplexity Sonar (direct or via OpenRouter), or xAI Grok.
 - `web_fetch` — HTTP fetch + readable extraction (HTML → markdown/text).
 
 These are **not** browser automation. For JS-heavy sites or logins, use the
@@ -20,8 +21,10 @@ These are **not** browser automation. For JS-heavy sites or logins, use the
 ## How it works
 
 - `web_search` calls your configured provider and returns results.
-  - **Brave** (default): returns structured results (title, URL, snippet).
+  - **OpenAI** (preferred when configured): returns AI-synthesized answers with citations when available.
+  - **Brave**: returns structured results (title, URL, snippet).
   - **Perplexity**: returns AI-synthesized answers with citations from real-time web search.
+  - **Grok**: returns AI-synthesized answers with citations from real-time web search.
 - Results are cached by query for 15 minutes (configurable).
 - `web_fetch` does a plain HTTP GET and extracts readable content
   (HTML → markdown/text). It does **not** execute JavaScript.
@@ -29,12 +32,16 @@ These are **not** browser automation. For JS-heavy sites or logins, use the
 
 ## Choosing a search provider
 
-| Provider            | Pros                                         | Cons                                     | API Key                                      |
-| ------------------- | -------------------------------------------- | ---------------------------------------- | -------------------------------------------- |
-| **Brave** (default) | Fast, structured results, free tier          | Traditional search results               | `BRAVE_API_KEY`                              |
-| **Perplexity**      | AI-synthesized answers, citations, real-time | Requires Perplexity or OpenRouter access | `OPENROUTER_API_KEY` or `PERPLEXITY_API_KEY` |
+| Provider       | Pros                                          | Cons                                     | API Key                                      |
+| -------------- | --------------------------------------------- | ---------------------------------------- | -------------------------------------------- |
+| **OpenAI**     | Built-in web_search, easy to reuse OpenAI key | Requires OpenAI API access               | `OPENAI_API_KEY`                             |
+| **Brave**      | Fast, structured results, free tier           | Traditional search results               | `BRAVE_API_KEY`                              |
+| **Perplexity** | AI-synthesized answers, citations, real-time  | Requires Perplexity or OpenRouter access | `OPENROUTER_API_KEY` or `PERPLEXITY_API_KEY` |
+| **Grok**       | AI-synthesized answers, citations, real-time  | Requires xAI access                      | `XAI_API_KEY`                                |
 
-See [Brave Search setup](/brave-search) and [Perplexity Sonar](/perplexity) for provider-specific details.
+If OpenAI web_search is selected but the endpoint does not support it, OpenClaw falls back to the next available provider (Brave, Perplexity, or Grok) when their keys are configured.
+
+See [Brave Search setup](/brave-search) and [Perplexity Sonar](/perplexity) for provider-specific details. OpenAI web_search reuses your OpenAI API key (and optional base URL).
 
 Set the provider in config:
 
@@ -43,7 +50,26 @@ Set the provider in config:
   tools: {
     web: {
       search: {
-        provider: "brave", // or "perplexity"
+        provider: "openai", // or "brave", "perplexity", "grok"
+      },
+    },
+  },
+}
+```
+
+Example: use OpenAI web_search:
+
+```json5
+{
+  tools: {
+    web: {
+      search: {
+        provider: "openai",
+        openai: {
+          apiKey: "sk-...",
+          baseUrl: "https://api.openai.com/v1",
+          model: "gpt-5.2",
+        },
       },
     },
   },
@@ -147,8 +173,10 @@ Search the web using your configured provider.
 
 - `tools.web.search.enabled` must not be `false` (default: enabled)
 - API key for your chosen provider:
+  - **OpenAI**: `OPENAI_API_KEY`, `models.providers.openai.apiKey`, or `tools.web.search.openai.apiKey`
   - **Brave**: `BRAVE_API_KEY` or `tools.web.search.apiKey`
   - **Perplexity**: `OPENROUTER_API_KEY`, `PERPLEXITY_API_KEY`, or `tools.web.search.perplexity.apiKey`
+  - **Grok**: `XAI_API_KEY` or `tools.web.search.grok.apiKey`
 
 ### Config
 
@@ -158,7 +186,10 @@ Search the web using your configured provider.
     web: {
       search: {
         enabled: true,
-        apiKey: "BRAVE_API_KEY_HERE", // optional if BRAVE_API_KEY is set
+        provider: "openai",
+        openai: {
+          apiKey: "OPENAI_API_KEY_HERE", // optional if OPENAI_API_KEY is set
+        },
         maxResults: 5,
         timeoutSeconds: 30,
         cacheTtlMinutes: 15,
@@ -262,4 +293,4 @@ Notes:
 - See [Firecrawl](/tools/firecrawl) for key setup and service details.
 - Responses are cached (default 15 minutes) to reduce repeated fetches.
 - If you use tool profiles/allowlists, add `web_search`/`web_fetch` or `group:web`.
-- If the Brave key is missing, `web_search` returns a short setup hint with a docs link.
+- If the provider key is missing, `web_search` returns a short setup hint with a docs link.

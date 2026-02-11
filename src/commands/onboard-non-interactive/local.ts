@@ -129,7 +129,7 @@ export async function runNonInteractiveOnboardingLocal(params: {
 
   if (!opts.json) {
     runtime.log(
-      `Tip: run \`${formatCliCommand("openclaw configure --section web")}\` to store your Brave API key for web_search. Docs: https://docs.openclaw.ai/tools/web`,
+      `Tip: run \`${formatCliCommand("openclaw configure --section web")}\` to pick a web_search provider (OpenAI preferred when OPENAI_API_KEY is set). Docs: https://docs.openclaw.ai/tools/web`,
     );
   }
 }

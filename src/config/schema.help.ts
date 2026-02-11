@@ -105,11 +105,17 @@ export const FIELD_HELP: Record<string, string> = {
     'Text suffix for cross-context markers (supports "{channel}").',
   "tools.message.broadcast.enabled": "Enable broadcast action (default: true).",
   "tools.web.search.enabled": "Enable the web_search tool (requires a provider API key).",
-  "tools.web.search.provider": 'Search provider ("brave" or "perplexity").',
+  "tools.web.search.provider": 'Search provider ("openai", "brave", "perplexity", or "grok").',
   "tools.web.search.apiKey": "Brave Search API key (fallback: BRAVE_API_KEY env var).",
   "tools.web.search.maxResults": "Default number of results to return (1-10).",
   "tools.web.search.timeoutSeconds": "Timeout in seconds for web_search requests.",
   "tools.web.search.cacheTtlMinutes": "Cache TTL in minutes for web_search results.",
+  "tools.web.search.openai.apiKey":
+    "OpenAI API key (fallback: OPENAI_API_KEY or models.providers.openai.apiKey).",
+  "tools.web.search.openai.baseUrl":
+    "OpenAI base URL override (default: https://api.openai.com/v1).",
+  "tools.web.search.openai.model":
+    "OpenAI model override (default: current agent model when possible).",
   "tools.web.search.perplexity.apiKey":
     "Perplexity or OpenRouter API key (fallback: PERPLEXITY_API_KEY or OPENROUTER_API_KEY env var).",
   "tools.web.search.perplexity.baseUrl":

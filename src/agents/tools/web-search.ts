@@ -3,6 +3,8 @@ import { formatCliCommand } from "../../cli/command-format.js";
 import type { OpenClawConfig } from "../../config/config.js";
 import { wrapWebContent } from "../../security/external-content.js";
 import { normalizeSecretInput } from "../../utils/normalize-secret-input.js";
+import { resolveApiKeyForProvider } from "../model-auth.js";
+import { parseModelRef } from "../model-selection.js";
 import type { AnyAgentTool } from "./common.js";
 import { jsonResult, readNumberParam, readStringParam } from "./common.js";
 import {
@@ -18,10 +20,11 @@ import {
   writeCache,
 } from "./web-shared.js";
 
-const SEARCH_PROVIDERS = ["brave", "perplexity", "grok"] as const;
+const SEARCH_PROVIDERS = ["openai", "brave", "perplexity", "grok"] as const;
 const DEFAULT_SEARCH_COUNT = 5;
 const MAX_SEARCH_COUNT = 10;
 
+const DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1";
 const BRAVE_SEARCH_ENDPOINT = "https://api.search.brave.com/res/v1/web/search";
 const DEFAULT_PERPLEXITY_BASE_URL = "https://openrouter.ai/api/v1";
 const PERPLEXITY_DIRECT_BASE_URL = "https://api.perplexity.ai";
@@ -94,6 +97,12 @@ type PerplexityConfig = {
   model?: string;
 };
 
+type OpenAiConfig = {
+  apiKey?: string;
+  baseUrl?: string;
+  model?: string;
+};
+
 type PerplexityApiKeySource = "config" | "perplexity_env" | "openrouter_env" | "none";
 
 type GrokConfig = {
@@ -124,6 +133,28 @@ type GrokSearchResponse = {
     end_index: number;
     url: string;
   }>;
+};
+
+type OpenAiSearchResponse = {
+  output_text?: string;
+  output?: Array<{
+    type?: string;
+    content?: Array<{
+      type?: string;
+      text?: string;
+      annotations?: Array<{ url?: string }>;
+    }>;
+  }>;
+  citations?: string[];
+};
+
+type OpenAiSearchErrorResponse = {
+  error?: {
+    message?: string;
+    type?: string;
+    code?: string;
+    param?: string;
+  };
 };
 
 type PerplexitySearchResponse = {
@@ -161,6 +192,61 @@ function extractGrokContent(data: GrokSearchResponse): {
   return { text, annotationCitations: [] };
 }
 
+class OpenAiWebSearchUnsupportedError extends Error {
+  readonly provider = "openai";
+  readonly detail: string;
+
+  constructor(detail: string) {
+    super("OpenAI web_search unsupported");
+    this.detail = detail;
+  }
+}
+
+function extractOpenAiContent(data: OpenAiSearchResponse): string | undefined {
+  if (typeof data.output_text === "string" && data.output_text) {
+    return data.output_text;
+  }
+  const outputs = Array.isArray(data.output) ? data.output : [];
+  const parts: string[] = [];
+  for (const output of outputs) {
+    const content = Array.isArray(output?.content) ? output.content : [];
+    for (const part of content) {
+      if (part?.type === "output_text" && typeof part.text === "string") {
+        parts.push(part.text);
+        continue;
+      }
+      if (typeof part?.text === "string" && part.text) {
+        parts.push(part.text);
+      }
+    }
+  }
+  return parts.length > 0 ? parts.join("\n") : undefined;
+}
+
+function extractOpenAiCitations(data: OpenAiSearchResponse): string[] {
+  const urls = new Set<string>();
+  if (Array.isArray(data.citations)) {
+    for (const entry of data.citations) {
+      if (typeof entry === "string" && entry) {
+        urls.add(entry);
+      }
+    }
+  }
+  const outputs = Array.isArray(data.output) ? data.output : [];
+  for (const output of outputs) {
+    const content = Array.isArray(output?.content) ? output.content : [];
+    for (const part of content) {
+      const annotations = Array.isArray(part?.annotations) ? part.annotations : [];
+      for (const annotation of annotations) {
+        if (typeof annotation?.url === "string" && annotation.url) {
+          urls.add(annotation.url);
+        }
+      }
+    }
+  }
+  return Array.from(urls);
+}
+
 function resolveSearchConfig(cfg?: OpenClawConfig): WebSearchConfig {
   const search = cfg?.tools?.web?.search;
   if (!search || typeof search !== "object") {
@@ -179,6 +265,112 @@ function resolveSearchEnabled(params: { search?: WebSearchConfig; sandboxed?: bo
   return true;
 }
 
+function resolveOpenAiConfig(search?: WebSearchConfig): OpenAiConfig {
+  if (!search || typeof search !== "object") {
+    return {};
+  }
+  const openai = "openai" in search ? search.openai : undefined;
+  if (!openai || typeof openai !== "object") {
+    return {};
+  }
+  return openai as OpenAiConfig;
+}
+
+function isOpenAiProvider(provider?: string): boolean {
+  const normalized = provider?.trim().toLowerCase();
+  return normalized === "openai" || normalized === "openai-codex";
+}
+
+function normalizeOpenAiModel(model: string): string {
+  const trimmed = model.trim();
+  if (!trimmed) {
+    return trimmed;
+  }
+  return trimmed.startsWith("openai/") ? trimmed.slice("openai/".length) : trimmed;
+}
+
+function resolveOpenAiModel(params: {
+  openai?: OpenAiConfig;
+  cfg?: OpenClawConfig;
+  modelProvider?: string;
+  modelId?: string;
+}): string | undefined {
+  const fromConfig =
+    params.openai && "model" in params.openai && typeof params.openai.model === "string"
+      ? params.openai.model.trim()
+      : "";
+  if (fromConfig) {
+    return normalizeOpenAiModel(fromConfig);
+  }
+  if (isOpenAiProvider(params.modelProvider) && params.modelId?.trim()) {
+    return normalizeOpenAiModel(params.modelId);
+  }
+  const primary = params.cfg?.agents?.defaults?.model?.primary;
+  if (typeof primary === "string" && primary.trim()) {
+    const parsed = parseModelRef(primary, "openai");
+    if (parsed?.provider === "openai") {
+      return normalizeOpenAiModel(parsed.model);
+    }
+  }
+  const providerModel = params.cfg?.models?.providers?.openai?.models?.[0]?.id;
+  if (typeof providerModel === "string" && providerModel.trim()) {
+    return normalizeOpenAiModel(providerModel);
+  }
+  return undefined;
+}
+
+function resolveOpenAiBaseUrl(openai?: OpenAiConfig, cfg?: OpenClawConfig): string {
+  const fromConfig =
+    openai && "baseUrl" in openai && typeof openai.baseUrl === "string"
+      ? openai.baseUrl.trim()
+      : "";
+  if (fromConfig) {
+    return fromConfig;
+  }
+  const providerBaseUrl = cfg?.models?.providers?.openai?.baseUrl?.trim();
+  if (providerBaseUrl) {
+    return providerBaseUrl;
+  }
+  return DEFAULT_OPENAI_BASE_URL;
+}
+
+function resolveOpenAiApiKeySync(openai?: OpenAiConfig, cfg?: OpenClawConfig): string | undefined {
+  const fromConfig =
+    openai && "apiKey" in openai && typeof openai.apiKey === "string"
+      ? normalizeApiKey(openai.apiKey)
+      : "";
+  if (fromConfig) {
+    return fromConfig;
+  }
+  const fromProviderConfig = normalizeApiKey(cfg?.models?.providers?.openai?.apiKey);
+  if (fromProviderConfig) {
+    return fromProviderConfig;
+  }
+  const fromEnv = normalizeApiKey(process.env.OPENAI_API_KEY);
+  return fromEnv || undefined;
+}
+
+async function resolveOpenAiApiKey(params: {
+  openai?: OpenAiConfig;
+  cfg?: OpenClawConfig;
+  agentDir?: string;
+}): Promise<string | undefined> {
+  const fromSync = resolveOpenAiApiKeySync(params.openai, params.cfg);
+  if (fromSync) {
+    return fromSync;
+  }
+  try {
+    const resolved = await resolveApiKeyForProvider({
+      provider: "openai",
+      cfg: params.cfg,
+      agentDir: params.agentDir,
+    });
+    return normalizeApiKey(resolved.apiKey);
+  } catch {
+    return undefined;
+  }
+}
+
 function resolveSearchApiKey(search?: WebSearchConfig): string | undefined {
   const fromConfig =
     search && "apiKey" in search && typeof search.apiKey === "string"
@@ -189,6 +381,14 @@ function resolveSearchApiKey(search?: WebSearchConfig): string | undefined {
 }
 
 function missingSearchKeyPayload(provider: (typeof SEARCH_PROVIDERS)[number]) {
+  if (provider === "openai") {
+    return {
+      error: "missing_openai_api_key",
+      message:
+        "web_search (openai) needs an OpenAI API key. Set OPENAI_API_KEY in the Gateway environment, configure tools.web.search.openai.apiKey, or set models.providers.openai.apiKey.",
+      docs: "https://docs.openclaw.ai/tools/web",
+    };
+  }
   if (provider === "perplexity") {
     return {
       error: "missing_perplexity_api_key",
@@ -212,11 +412,19 @@ function missingSearchKeyPayload(provider: (typeof SEARCH_PROVIDERS)[number]) {
   };
 }
 
-function resolveSearchProvider(search?: WebSearchConfig): (typeof SEARCH_PROVIDERS)[number] {
+function resolveSearchProvider(params: {
+  search?: WebSearchConfig;
+  cfg?: OpenClawConfig;
+  modelProvider?: string;
+  modelId?: string;
+}): (typeof SEARCH_PROVIDERS)[number] {
   const raw =
-    search && "provider" in search && typeof search.provider === "string"
-      ? search.provider.trim().toLowerCase()
+    params.search && "provider" in params.search && typeof params.search.provider === "string"
+      ? params.search.provider.trim().toLowerCase()
       : "";
+  if (raw === "openai") {
+    return "openai";
+  }
   if (raw === "perplexity") {
     return "perplexity";
   }
@@ -226,6 +434,13 @@ function resolveSearchProvider(search?: WebSearchConfig): (typeof SEARCH_PROVIDE
   if (raw === "brave") {
     return "brave";
   }
+
+  const openaiConfig = resolveOpenAiConfig(params.search);
+  const openaiKey = resolveOpenAiApiKeySync(openaiConfig, params.cfg);
+  if (openaiKey) {
+    return "openai";
+  }
+
   return "brave";
 }
 
@@ -446,6 +661,91 @@ function resolveSiteName(url: string | undefined): string | undefined {
   }
 }
 
+function resolveOpenAiErrorDetail(detail: string): { message: string; code?: string } {
+  if (!detail) {
+    return { message: "" };
+  }
+  try {
+    const parsed = JSON.parse(detail) as OpenAiSearchErrorResponse;
+    if (parsed?.error?.message) {
+      return {
+        message: parsed.error.message,
+        code: typeof parsed.error.code === "string" ? parsed.error.code : undefined,
+      };
+    }
+  } catch {}
+  return { message: detail };
+}
+
+function isOpenAiWebSearchUnsupported(params: { status: number; detail: string; code?: string }) {
+  const status = params.status;
+  if (status !== 400 && status !== 404 && status !== 422) {
+    return false;
+  }
+  const normalized = params.detail.toLowerCase();
+  const code = params.code?.toLowerCase();
+  if (code && (code.includes("unsupported") || code.includes("not_supported"))) {
+    return true;
+  }
+  if (!normalized.includes("web_search") && !normalized.includes("web search")) {
+    return normalized.includes("tool") && normalized.includes("unsupported");
+  }
+  return (
+    normalized.includes("does not support") ||
+    normalized.includes("not supported") ||
+    normalized.includes("unsupported") ||
+    normalized.includes("unknown tool") ||
+    normalized.includes("unrecognized")
+  );
+}
+
+async function runOpenAiSearch(params: {
+  query: string;
+  apiKey: string;
+  baseUrl: string;
+  model: string;
+  timeoutSeconds: number;
+}): Promise<{ content: string; citations: string[] }> {
+  const baseUrl = params.baseUrl.trim().replace(/\/$/, "");
+  const endpoint = `${baseUrl}/responses`;
+
+  const res = await fetch(endpoint, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${params.apiKey}`,
+    },
+    body: JSON.stringify({
+      model: params.model,
+      input: params.query,
+      tools: [{ type: "web_search" }],
+    }),
+    signal: withTimeout(undefined, params.timeoutSeconds * 1000),
+  });
+
+  if (!res.ok) {
+    const detail = await readResponseText(res);
+    const parsed = resolveOpenAiErrorDetail(detail);
+    if (
+      isOpenAiWebSearchUnsupported({
+        status: res.status,
+        detail: parsed.message,
+        code: parsed.code,
+      })
+    ) {
+      throw new OpenAiWebSearchUnsupportedError(parsed.message || detail || res.statusText);
+    }
+    throw new Error(
+      `OpenAI API error (${res.status}): ${parsed.message || detail || res.statusText}`,
+    );
+  }
+
+  const data = (await res.json()) as OpenAiSearchResponse;
+  const content = extractOpenAiContent(data) ?? "No response";
+  const citations = extractOpenAiCitations(data);
+  return { content, citations };
+}
+
 async function runPerplexitySearch(params: {
   query: string;
   apiKey: string;
@@ -562,6 +862,8 @@ async function runWebSearch(params: {
   search_lang?: string;
   ui_lang?: string;
   freshness?: string;
+  openaiBaseUrl?: string;
+  openaiModel?: string;
   perplexityBaseUrl?: string;
   perplexityModel?: string;
   grokModel?: string;
@@ -572,7 +874,9 @@ async function runWebSearch(params: {
       ? `${params.provider}:${params.query}:${params.count}:${params.country || "default"}:${params.search_lang || "default"}:${params.ui_lang || "default"}:${params.freshness || "default"}`
       : params.provider === "perplexity"
         ? `${params.provider}:${params.query}:${params.perplexityBaseUrl ?? DEFAULT_PERPLEXITY_BASE_URL}:${params.perplexityModel ?? DEFAULT_PERPLEXITY_MODEL}:${params.freshness || "default"}`
-        : `${params.provider}:${params.query}:${params.grokModel ?? DEFAULT_GROK_MODEL}:${String(params.grokInlineCitations ?? false)}`,
+        : params.provider === "openai"
+          ? `${params.provider}:${params.query}:${params.openaiBaseUrl ?? DEFAULT_OPENAI_BASE_URL}:${params.openaiModel ?? "default"}`
+          : `${params.provider}:${params.query}:${params.grokModel ?? DEFAULT_GROK_MODEL}:${String(params.grokInlineCitations ?? false)}`,
   );
   const cached = readCache(SEARCH_CACHE, cacheKey);
   if (cached) {
@@ -580,6 +884,27 @@ async function runWebSearch(params: {
   }
 
   const start = Date.now();
+
+  if (params.provider === "openai") {
+    const { content, citations } = await runOpenAiSearch({
+      query: params.query,
+      apiKey: params.apiKey,
+      baseUrl: params.openaiBaseUrl ?? DEFAULT_OPENAI_BASE_URL,
+      model: params.openaiModel ?? "",
+      timeoutSeconds: params.timeoutSeconds,
+    });
+
+    const payload = {
+      query: params.query,
+      provider: params.provider,
+      model: params.openaiModel ?? "",
+      tookMs: Date.now() - start,
+      content: wrapWebContent(content),
+      citations,
+    };
+    writeCache(SEARCH_CACHE, cacheKey, payload, params.cacheTtlMs);
+    return payload;
+  }
 
   if (params.provider === "perplexity") {
     const { content, citations } = await runPerplexitySearch({
@@ -708,22 +1033,40 @@ async function runWebSearch(params: {
 export function createWebSearchTool(options?: {
   config?: OpenClawConfig;
   sandboxed?: boolean;
+  modelProvider?: string;
+  modelId?: string;
+  agentDir?: string;
 }): AnyAgentTool | null {
   const search = resolveSearchConfig(options?.config);
   if (!resolveSearchEnabled({ search, sandboxed: options?.sandboxed })) {
     return null;
   }
 
-  const provider = resolveSearchProvider(search);
+  const openaiConfig = resolveOpenAiConfig(search);
+  const openaiModel = resolveOpenAiModel({
+    openai: openaiConfig,
+    cfg: options?.config,
+    modelProvider: options?.modelProvider,
+    modelId: options?.modelId,
+  });
+  const openaiBaseUrl = resolveOpenAiBaseUrl(openaiConfig, options?.config);
+  const provider = resolveSearchProvider({
+    search,
+    cfg: options?.config,
+    modelProvider: options?.modelProvider,
+    modelId: options?.modelId,
+  });
   const perplexityConfig = resolvePerplexityConfig(search);
   const grokConfig = resolveGrokConfig(search);
 
   const description =
-    provider === "perplexity"
-      ? "Search the web using Perplexity Sonar (direct or via OpenRouter). Returns AI-synthesized answers with citations from real-time web search."
-      : provider === "grok"
-        ? "Search the web using xAI Grok. Returns AI-synthesized answers with citations from real-time web search."
-        : "Search the web using Brave Search API. Supports region-specific and localized search via country and language parameters. Returns titles, URLs, and snippets for fast research.";
+    provider === "openai"
+      ? "Search the web using OpenAI web_search. Returns AI-synthesized answers with citations when available."
+      : provider === "perplexity"
+        ? "Search the web using Perplexity Sonar (direct or via OpenRouter). Returns AI-synthesized answers with citations from real-time web search."
+        : provider === "grok"
+          ? "Search the web using xAI Grok. Returns AI-synthesized answers with citations from real-time web search."
+          : "Search the web using Brave Search API. Supports region-specific and localized search via country and language parameters. Returns titles, URLs, and snippets for fast research.";
 
   return {
     label: "Web Search",
@@ -731,14 +1074,26 @@ export function createWebSearchTool(options?: {
     description,
     parameters: WebSearchSchema,
     execute: async (_toolCallId, args) => {
-      const perplexityAuth =
-        provider === "perplexity" ? resolvePerplexityApiKey(perplexityConfig) : undefined;
+      const perplexityAuth = resolvePerplexityApiKey(perplexityConfig);
+      const grokApiKey = resolveGrokApiKey(grokConfig);
+      const braveApiKey = resolveSearchApiKey(search);
+      const openaiApiKey =
+        provider === "openai"
+          ? await resolveOpenAiApiKey({
+              openai: openaiConfig,
+              cfg: options?.config,
+              agentDir: options?.agentDir,
+            })
+          : undefined;
+
       const apiKey =
-        provider === "perplexity"
-          ? perplexityAuth?.apiKey
-          : provider === "grok"
-            ? resolveGrokApiKey(grokConfig)
-            : resolveSearchApiKey(search);
+        provider === "openai"
+          ? openaiApiKey
+          : provider === "perplexity"
+            ? perplexityAuth?.apiKey
+            : provider === "grok"
+              ? grokApiKey
+              : braveApiKey;
 
       if (!apiKey) {
         return jsonResult(missingSearchKeyPayload(provider));
@@ -767,27 +1122,80 @@ export function createWebSearchTool(options?: {
           docs: "https://docs.openclaw.ai/tools/web",
         });
       }
-      const result = await runWebSearch({
-        query,
-        count: resolveSearchCount(count, DEFAULT_SEARCH_COUNT),
-        apiKey,
-        timeoutSeconds: resolveTimeoutSeconds(search?.timeoutSeconds, DEFAULT_TIMEOUT_SECONDS),
-        cacheTtlMs: resolveCacheTtlMs(search?.cacheTtlMinutes, DEFAULT_CACHE_TTL_MINUTES),
-        provider,
-        country,
-        search_lang,
-        ui_lang,
-        freshness,
-        perplexityBaseUrl: resolvePerplexityBaseUrl(
-          perplexityConfig,
-          perplexityAuth?.source,
-          perplexityAuth?.apiKey,
-        ),
-        perplexityModel: resolvePerplexityModel(perplexityConfig),
-        grokModel: resolveGrokModel(grokConfig),
-        grokInlineCitations: resolveGrokInlineCitations(grokConfig),
-      });
-      return jsonResult(result);
+      if (provider === "openai" && !openaiModel) {
+        return jsonResult({
+          error: "missing_openai_model",
+          message:
+            "web_search (openai) needs a model. Set tools.web.search.openai.model, use an OpenAI agent model, or choose a different provider.",
+          docs: "https://docs.openclaw.ai/tools/web",
+        });
+      }
+
+      const executeSearch = async (providerOverride?: (typeof SEARCH_PROVIDERS)[number]) => {
+        const selected = providerOverride ?? provider;
+        const selectedKey =
+          selected === "openai"
+            ? openaiApiKey
+            : selected === "perplexity"
+              ? perplexityAuth?.apiKey
+              : selected === "grok"
+                ? grokApiKey
+                : braveApiKey;
+        if (!selectedKey) {
+          return jsonResult(missingSearchKeyPayload(selected));
+        }
+        const result = await runWebSearch({
+          query,
+          count: resolveSearchCount(count, DEFAULT_SEARCH_COUNT),
+          apiKey: selectedKey,
+          timeoutSeconds: resolveTimeoutSeconds(search?.timeoutSeconds, DEFAULT_TIMEOUT_SECONDS),
+          cacheTtlMs: resolveCacheTtlMs(search?.cacheTtlMinutes, DEFAULT_CACHE_TTL_MINUTES),
+          provider: selected,
+          country,
+          search_lang,
+          ui_lang,
+          freshness,
+          openaiBaseUrl,
+          openaiModel: openaiModel ?? "",
+          perplexityBaseUrl: resolvePerplexityBaseUrl(
+            perplexityConfig,
+            perplexityAuth?.source,
+            perplexityAuth?.apiKey,
+          ),
+          perplexityModel: resolvePerplexityModel(perplexityConfig),
+          grokModel: resolveGrokModel(grokConfig),
+          grokInlineCitations: resolveGrokInlineCitations(grokConfig),
+        });
+        return jsonResult(result);
+      };
+
+      if (provider !== "openai") {
+        return executeSearch();
+      }
+
+      try {
+        return await executeSearch();
+      } catch (error) {
+        if (!(error instanceof OpenAiWebSearchUnsupportedError)) {
+          throw error;
+        }
+        const fallbackProvider = braveApiKey
+          ? "brave"
+          : perplexityAuth?.apiKey
+            ? "perplexity"
+            : grokApiKey
+              ? "grok"
+              : undefined;
+        if (!fallbackProvider) {
+          return jsonResult({
+            error: "unsupported_openai_web_search",
+            message:
+              "OpenAI web_search is not supported by this endpoint, and no fallback provider is configured.",
+            docs: "https://docs.openclaw.ai/tools/web",
+          });
+        }
+        return executeSearch(fallbackProvider);
+      }
     },
   };
 }
@@ -799,8 +1207,14 @@ export const __testing = {
   resolvePerplexityRequestModel,
   normalizeFreshness,
   freshnessToPerplexityRecency,
+  resolveOpenAiModel,
+  resolveOpenAiBaseUrl,
+  resolveOpenAiApiKeySync,
   resolveGrokApiKey,
   resolveGrokModel,
   resolveGrokInlineCitations,
   extractGrokContent,
+  extractOpenAiContent,
+  extractOpenAiCitations,
+  isOpenAiWebSearchUnsupported,
 } as const;

@@ -55,6 +55,10 @@ export function createOpenClawTools(options?: {
   hasRepliedRef?: { value: boolean };
   /** If true, the model has native vision capability */
   modelHasVision?: boolean;
+  /** Provider of the currently selected model (used for provider-specific tool quirks). */
+  modelProvider?: string;
+  /** Model id for the current provider (used for model-specific tool gating). */
+  modelId?: string;
   /** Explicit agent ID override for cron/hook sessions. */
   requesterAgentIdOverride?: string;
   /** Require explicit message targets (no implicit last-route sends). */
@@ -78,6 +82,9 @@ export function createOpenClawTools(options?: {
   const webSearchTool = createWebSearchTool({
     config: options?.config,
     sandboxed: options?.sandboxed,
+    modelProvider: options?.modelProvider,
+    modelId: options?.modelId,
+    agentDir: options?.agentDir,
   });
   const webFetchTool = createWebFetchTool({
     config: options?.config,

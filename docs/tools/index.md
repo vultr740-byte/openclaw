@@ -255,7 +255,7 @@ Enable with `tools.loopDetection.enabled: true` (default is `false`).
 
 ### `web_search`
 
-Search the web using Brave Search API.
+Search the web using OpenAI, Brave, Perplexity, or Grok.
 
 Core parameters:
 
@@ -264,7 +264,8 @@ Core parameters:
 
 Notes:
 
-- Requires a Brave API key (recommended: `openclaw configure --section web`, or set `BRAVE_API_KEY`).
+- Requires a provider API key (OpenAI, Brave, Perplexity, or Grok).
+- OpenAI is preferred when `OPENAI_API_KEY` is set.
 - Enable via `tools.web.search.enabled`.
 - Responses are cached (default 15 min).
 - See [Web tools](/tools/web) for setup.

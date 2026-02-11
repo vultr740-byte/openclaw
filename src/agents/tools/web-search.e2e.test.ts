@@ -13,6 +13,12 @@ const {
   resolveGrokModel,
   resolveGrokInlineCitations,
   extractGrokContent,
+  resolveOpenAiModel,
+  resolveOpenAiBaseUrl,
+  resolveOpenAiApiKeySync,
+  extractOpenAiContent,
+  extractOpenAiCitations,
+  isOpenAiWebSearchUnsupported,
 } = __testing;
 
 describe("web_search perplexity baseUrl defaults", () => {
@@ -218,5 +224,71 @@ describe("web_search grok response parsing", () => {
     const result = extractGrokContent({});
     expect(result.text).toBeUndefined();
     expect(result.annotationCitations).toEqual([]);
+  });
+});
+
+describe("web_search openai config resolution", () => {
+  it("uses openai model override when provided", () => {
+    expect(resolveOpenAiModel({ openai: { model: "openai/gpt-5.2" } })).toBe("gpt-5.2");
+  });
+
+  it("uses current agent model when provider is openai", () => {
+    expect(resolveOpenAiModel({ modelProvider: "openai", modelId: "gpt-5.2" })).toBe("gpt-5.2");
+  });
+
+  it("uses configured provider baseUrl when present", () => {
+    expect(
+      resolveOpenAiBaseUrl(undefined, {
+        models: { providers: { openai: { baseUrl: "https://proxy.example/v1", models: [] } } },
+      }),
+    ).toBe("https://proxy.example/v1");
+  });
+
+  it("uses OPENAI_API_KEY when set", () => {
+    const previous = process.env.OPENAI_API_KEY;
+    try {
+      process.env.OPENAI_API_KEY = "sk-test";
+      expect(resolveOpenAiApiKeySync(undefined, undefined)).toBe("sk-test");
+    } finally {
+      if (previous === undefined) {
+        delete process.env.OPENAI_API_KEY;
+      } else {
+        process.env.OPENAI_API_KEY = previous;
+      }
+    }
+  });
+});
+
+describe("web_search openai response parsing", () => {
+  it("extracts content from output_text", () => {
+    expect(extractOpenAiContent({ output_text: "hello" })).toBe("hello");
+  });
+
+  it("extracts citations from annotations", () => {
+    const citations = extractOpenAiCitations({
+      output: [
+        {
+          content: [
+            {
+              type: "output_text",
+              text: "hello",
+              annotations: [{ url: "https://example.com" }],
+            },
+          ],
+        },
+      ],
+    });
+    expect(citations).toEqual(["https://example.com"]);
+  });
+});
+
+describe("web_search openai unsupported detection", () => {
+  it("flags unsupported tool responses", () => {
+    expect(
+      isOpenAiWebSearchUnsupported({
+        status: 400,
+        detail: "The model does not support web_search",
+      }),
+    ).toBe(true);
   });
 });
