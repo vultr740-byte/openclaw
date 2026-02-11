@@ -24,6 +24,13 @@
     "native": "auto",
     "nativeSkills": "auto"
   },
+  "tools": {
+    "elevated": {
+      "allowFrom": {
+        "telegram": "__TELEGRAM_ALLOW_FROM__"
+      }
+    }
+  },
   "channels": {
     "telegram": {
       "enabled": true,
