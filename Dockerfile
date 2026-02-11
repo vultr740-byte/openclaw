@@ -45,6 +45,8 @@ ENV OPENCLAW_PREFER_PNPM=1
 RUN pnpm ui:build
 
 ENV NODE_ENV=production
+# Allow running the gateway as root when required by the host environment.
+ENV OPENCLAW_RUN_AS_ROOT=1
 
 # Allow non-root user to write temp files during runtime/tests.
 # Create /data so containerized defaults can write state/workspace without root.
