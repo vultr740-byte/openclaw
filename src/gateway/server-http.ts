@@ -315,6 +315,14 @@ export function createGatewayHttpServer(opts: {
     }
 
     try {
+      const url = new URL(req.url ?? "/", "http://localhost");
+      if (url.pathname === "/health") {
+        res.statusCode = 200;
+        res.setHeader("Content-Type", "application/json; charset=utf-8");
+        res.end(JSON.stringify({ ok: true }));
+        return;
+      }
+
       const configSnapshot = loadConfig();
       const trustedProxies = configSnapshot.gateway?.trustedProxies ?? [];
       if (await handleHooksRequest(req, res)) {
@@ -356,7 +364,6 @@ export function createGatewayHttpServer(opts: {
         }
       }
       if (canvasHost) {
-        const url = new URL(req.url ?? "/", "http://localhost");
         if (isCanvasPath(url.pathname)) {
           const ok = await authorizeCanvasRequest({
             req,

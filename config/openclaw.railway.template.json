@@ -1,0 +1,59 @@
+{
+  "meta": {
+    "lastTouchedVersion": "2026.2.9"
+  },
+  "agents": {
+    "defaults": {
+      "compaction": {
+        "mode": "safeguard"
+      },
+      "workspace": "${OPENCLAW_WORKSPACE_DIR}",
+      "maxConcurrent": 4,
+      "subagents": {
+        "maxConcurrent": 8
+      },
+      "model": {
+        "primary": "openai/${OPENAI_MODEL}"
+      }
+    }
+  },
+  "messages": {
+    "ackReactionScope": "group-mentions"
+  },
+  "commands": {
+    "native": "auto",
+    "nativeSkills": "auto"
+  },
+  "channels": {
+    "telegram": {
+      "enabled": true,
+      "dmPolicy": "allowlist",
+      "botToken": "${TELEGRAM_BOT_TOKEN}",
+      "allowFrom": "__TELEGRAM_ALLOW_FROM__",
+      "groupPolicy": "allowlist",
+      "streamMode": "partial"
+    }
+  },
+  "plugins": {
+    "entries": {
+      "telegram": {
+        "enabled": true
+      }
+    }
+  },
+  "models": {
+    "providers": {
+      "openai": {
+        "baseUrl": "${OPENAI_BASE_URL}",
+        "apiKey": "${OPENAI_API_KEY}",
+        "api": "${OPENAI_API_MODE}",
+        "models": [
+          {
+            "id": "${OPENAI_MODEL}",
+            "name": "${OPENAI_MODEL}"
+          }
+        ]
+      }
+    }
+  }
+}
