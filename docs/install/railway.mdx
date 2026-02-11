@@ -63,6 +63,31 @@ Set these variables on the service:
 - `OPENCLAW_WORKSPACE_DIR=/data/workspace` (recommended)
 - `OPENCLAW_GATEWAY_TOKEN` (recommended; treat as an admin secret)
 
+## Env only setup (skip /setup)
+
+If you want a fully automated deploy with no in-browser setup, use the config
+template + env variables path. The entrypoint will create
+`$OPENCLAW_STATE_DIR/openclaw.json` on first boot.
+
+Add these variables:
+
+- `OPENCLAW_CONFIG_TEMPLATE=/app/config/openclaw.railway.template.json`
+- `OPENCLAW_CONFIG_TEMPLATE_FORCE=1` (optional; overwrite existing config)
+- `OPENCLAW_GATEWAY_BIND=lan`
+- `OPENAI_API_KEY`
+- `OPENAI_BASE_URL`
+- `OPENAI_API_MODE=openai-responses` (or `openai-completions` if your proxy requires it)
+- `OPENAI_MODEL` (example: `gpt-5.2`)
+- `TELEGRAM_BOT_TOKEN`
+- `TELEGRAM_ALLOW_FROM` (comma-separated Telegram user ids, or set `TELEGRAM_ALLOW_FROM_JSON` to a JSON array)
+
+Notes:
+
+- The template sets Telegram to `dmPolicy: "allowlist"`, so no pairing codes are used.
+- If `TELEGRAM_ALLOW_FROM` (or JSON variant) is empty, Telegram DMs are blocked.
+- Missing env vars referenced in the template will block startup.
+- To change the model or allowlist later, update the env vars and redeploy.
+
 ## Setup flow
 
 1. Visit `https://<your-railway-domain>/setup` and enter your `SETUP_PASSWORD`.

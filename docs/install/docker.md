@@ -112,6 +112,21 @@ docker compose run --rm openclaw-cli devices approve <requestId>
 
 More detail: [Dashboard](/web/dashboard), [Devices](/cli/devices).
 
+If you don’t use Docker Compose (or you only have a shell inside the container),
+run the pairing commands directly against the local gateway:
+
+```bash
+export GW_URL="ws://127.0.0.1:${OPENCLAW_GATEWAY_PORT:-8080}"
+
+node openclaw.mjs devices list \
+  --url "$GW_URL" \
+  --token "$OPENCLAW_GATEWAY_TOKEN"
+
+node openclaw.mjs devices approve <requestId> \
+  --url "$GW_URL" \
+  --token "$OPENCLAW_GATEWAY_TOKEN"
+```
+
 ### Extra mounts (optional)
 
 If you want to mount additional host directories into the containers, set
@@ -227,14 +242,18 @@ If you need Playwright to install system deps, rebuild the image with
 ### Permissions + EACCES
 
 The image runs as `node` (uid 1000). If you see permission errors on
-`/home/node/.openclaw`, make sure your host bind mounts are owned by uid 1000.
+`/data` (managed container volumes) or `/home/node/.openclaw` (Compose),
+make sure the mounted volume is owned by uid 1000 and is writable.
 
 Example (Linux host):
 
 ```bash
-sudo chown -R 1000:1000 /path/to/openclaw-config /path/to/openclaw-workspace
+sudo chown -R 1000:1000 /path/to/openclaw-data
 ```
 
+If you use the repo Dockerfile + entrypoint, it creates `/data/.openclaw` and
+`/data/workspace` and fixes ownership at startup. If you override the entrypoint
+or run as a non-root user, you must ensure the same permissions yourself.
 If you choose to run as root for convenience, you accept the security tradeoff.
 
 ### Faster rebuilds (recommended)
@@ -321,9 +340,57 @@ pnpm test:docker:qr
 
 ### Notes
 
-- Gateway bind defaults to `lan` for container use.
+- Gateway bind defaults to `loopback` for security. For external access, set
+  `gateway.bind: "lan"` (or `OPENCLAW_GATEWAY_BIND=lan`) and provide
+  `OPENCLAW_GATEWAY_TOKEN` or `OPENCLAW_GATEWAY_PASSWORD`.
 - Dockerfile CMD uses `--allow-unconfigured`; mounted config with `gateway.mode` not `local` will still start. Override CMD to enforce the guard.
 - The gateway container is the source of truth for sessions (`~/.openclaw/agents/<agentId>/sessions/`).
+
+### Redeploy recap and checklist
+
+#### What failed and why
+
+- `EACCES: mkdir /data` or `/data/.openclaw` came from a root-owned volume with a non-root runtime user.
+- Health checks failed when the gateway was bound to `loopback` or listening on a different port than the platform expects.
+- `Invalid --bind` came from passing a raw IP like `0.0.0.0` instead of a bind mode (`loopback`, `lan`, `tailnet`, `auto`, `custom`).
+- Control UI showed `unauthorized` or `pairing required` when the token was missing or the browser device was not approved.
+- Telegram showed 401 errors when the bot token was wrong or missing.
+- Pairing approvals did not stick when the CLI wrote to a different state dir than the gateway.
+- Agent errors happened when no model provider key was configured.
+
+#### Step by step redo
+
+1. **Pick a state dir and mount it**
+   - Managed platform volume: `/data`
+   - Compose: `/home/node/.openclaw`  
+     Ensure the volume is writable by uid 1000, or use the repo entrypoint so it fixes `/data` ownership.
+
+2. **Set required env vars**
+   - `OPENCLAW_GATEWAY_TOKEN` (or `OPENCLAW_GATEWAY_PASSWORD`) for any non-loopback bind
+   - `OPENCLAW_GATEWAY_PORT` (or `PORT`, which the entrypoint maps)
+   - `OPENCLAW_GATEWAY_BIND=lan` if you need external access
+   - Model provider env vars (for example `OPENAI_API_KEY`, plus a custom base URL if needed)
+
+3. **Start the gateway**  
+   If you use a non-loopback bind, keep auth on. Avoid `--bind 0.0.0.0`; use `lan` or `custom` with `gateway.customBindHost`.
+
+4. **Connect the Control UI**  
+   Open the dashboard URL and paste the token. Approve the browser device with
+   the devices commands above if pairing is required. More detail:
+   [Dashboard](/web/dashboard), [Devices](/cli/devices), [Pairing](/gateway/pairing).
+
+5. **Configure a model provider**  
+   Add `models.providers.<provider>` and set `agents.defaults.model.primary`
+   (see [Providers](/providers) and [Gateway Configuration](/gateway/configuration)).
+
+6. **Configure channels and approve pairing**  
+   Set the Telegram bot token, then approve the pairing code using the same
+   `OPENCLAW_STATE_DIR` as the gateway. If you see 401 errors, the bot token is wrong.
+   More detail: [Telegram](/channels/telegram), [Channel Troubleshooting](/channels/troubleshooting).
+
+7. **Verify**  
+   Use `openclaw status --deep` or `openclaw channels status --probe`, and send a test
+   message. If the CLI is not on PATH inside the container, use `node /app/openclaw.mjs`.
 
 ## Agent Sandbox (host gateway + Docker tools)
 
