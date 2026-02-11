@@ -2066,7 +2066,17 @@ of `every`, keep `HEARTBEAT.md` tiny, and/or choose a cheaper `model`.
 `tools.web` configures web search + fetch tools:
 
 - `tools.web.search.enabled` (default: true when key is present)
-- `tools.web.search.apiKey` (recommended: set via `openclaw configure --section web`, or use `BRAVE_API_KEY` env var)
+- `tools.web.search.provider` (`openai`, `brave`, `perplexity`, `grok`; default prefers OpenAI when available)
+- `tools.web.search.apiKey` (Brave key; recommended: set via `openclaw configure --section web`, or use `BRAVE_API_KEY` env var)
+- `tools.web.search.openai.apiKey` (OpenAI key; fallback: `OPENAI_API_KEY` or `models.providers.openai.apiKey`)
+- `tools.web.search.openai.baseUrl` (OpenAI base URL override)
+- `tools.web.search.openai.model` (OpenAI model override)
+- `tools.web.search.perplexity.apiKey` (Perplexity/OpenRouter key; fallback: `PERPLEXITY_API_KEY` or `OPENROUTER_API_KEY`)
+- `tools.web.search.perplexity.baseUrl` (Perplexity base URL override)
+- `tools.web.search.perplexity.model` (Perplexity model override)
+- `tools.web.search.grok.apiKey` (xAI key; fallback: `XAI_API_KEY`)
+- `tools.web.search.grok.model` (xAI model override)
+- `tools.web.search.grok.inlineCitations` (xAI inline citations toggle)
 - `tools.web.search.maxResults` (1–10, default 5)
 - `tools.web.search.timeoutSeconds` (default 30)
 - `tools.web.search.cacheTtlMinutes` (default 15)
