@@ -134,6 +134,9 @@ if [ "$(id -u)" = "0" ]; then
   ensure_legacy_workspace
   chown -R node:node /data
   bootstrap_config
+  if [ "${OPENCLAW_RUN_AS_ROOT:-}" = "1" ]; then
+    exec "$@" "${bind_args[@]}"
+  fi
   exec gosu node "$@" "${bind_args[@]}"
 fi
 
