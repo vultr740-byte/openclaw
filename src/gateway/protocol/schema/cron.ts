@@ -70,6 +70,8 @@ export const CronPayloadPatchSchema = Type.Union([
 
 const CronDeliverySharedProperties = {
   channel: Type.Optional(Type.Union([Type.Literal("last"), NonEmptyString])),
+  accountId: Type.Optional(Type.String()),
+  threadId: Type.Optional(Type.Union([Type.Integer(), Type.String()])),
   bestEffort: Type.Optional(Type.Boolean()),
 };
 
@@ -117,6 +119,14 @@ export const CronDeliveryPatchSchema = Type.Object(
   { additionalProperties: false },
 );
 
+export const CronFollowupSchema = Type.Object(
+  {
+    expiresAtMs: Type.Optional(Type.Integer({ minimum: 0 })),
+    stopOnReply: Type.Optional(Type.Boolean()),
+  },
+  { additionalProperties: false },
+);
+
 export const CronJobStateSchema = Type.Object(
   {
     nextRunAtMs: Type.Optional(Type.Integer({ minimum: 0 })),
@@ -148,6 +158,7 @@ export const CronJobSchema = Type.Object(
     wakeMode: Type.Union([Type.Literal("next-heartbeat"), Type.Literal("now")]),
     payload: CronPayloadSchema,
     delivery: Type.Optional(CronDeliverySchema),
+    followup: Type.Optional(CronFollowupSchema),
     state: CronJobStateSchema,
   },
   { additionalProperties: false },
@@ -175,6 +186,7 @@ export const CronAddParamsSchema = Type.Object(
     wakeMode: Type.Union([Type.Literal("next-heartbeat"), Type.Literal("now")]),
     payload: CronPayloadSchema,
     delivery: Type.Optional(CronDeliverySchema),
+    followup: Type.Optional(CronFollowupSchema),
   },
   { additionalProperties: false },
 );
@@ -192,6 +204,7 @@ export const CronJobPatchSchema = Type.Object(
     wakeMode: Type.Optional(Type.Union([Type.Literal("next-heartbeat"), Type.Literal("now")])),
     payload: Type.Optional(CronPayloadPatchSchema),
     delivery: Type.Optional(CronDeliveryPatchSchema),
+    followup: Type.Optional(CronFollowupSchema),
     state: Type.Optional(Type.Partial(CronJobStateSchema)),
   },
   { additionalProperties: false },

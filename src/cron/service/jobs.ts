@@ -9,6 +9,8 @@ import {
 import type {
   CronDelivery,
   CronDeliveryPatch,
+  CronFollowup,
+  CronFollowupPatch,
   CronJob,
   CronJobCreate,
   CronJobPatch,
@@ -357,6 +359,7 @@ export function createJob(state: CronServiceState, input: CronJobCreate): CronJo
     wakeMode: input.wakeMode,
     payload: input.payload,
     delivery: input.delivery,
+    followup: input.followup,
     state: {
       ...input.state,
     },
@@ -420,6 +423,9 @@ export function applyJobPatch(job: CronJob, patch: CronJobPatch) {
   }
   if (patch.delivery) {
     job.delivery = mergeCronDelivery(job.delivery, patch.delivery);
+  }
+  if ("followup" in patch && patch.followup) {
+    job.followup = mergeCronFollowup(job.followup, patch.followup);
   }
   if (job.sessionTarget === "main" && job.delivery?.mode !== "webhook") {
     job.delivery = undefined;
@@ -560,6 +566,8 @@ function mergeCronDelivery(
     mode: existing?.mode ?? "none",
     channel: existing?.channel,
     to: existing?.to,
+    accountId: existing?.accountId,
+    threadId: existing?.threadId,
     bestEffort: existing?.bestEffort,
   };
 
@@ -574,11 +582,62 @@ function mergeCronDelivery(
     const to = typeof patch.to === "string" ? patch.to.trim() : "";
     next.to = to ? to : undefined;
   }
+  if ("accountId" in patch) {
+    const accountId = typeof patch.accountId === "string" ? patch.accountId.trim() : "";
+    next.accountId = accountId ? accountId : undefined;
+  }
+  if ("threadId" in patch) {
+    const threadId =
+      typeof patch.threadId === "number" && Number.isFinite(patch.threadId)
+        ? Math.trunc(patch.threadId)
+        : typeof patch.threadId === "string"
+          ? patch.threadId.trim()
+          : "";
+    next.threadId = threadId ? threadId : undefined;
+  }
   if (typeof patch.bestEffort === "boolean") {
     next.bestEffort = patch.bestEffort;
   }
 
   return next;
+}
+
+function mergeCronFollowup(
+  existing: CronFollowup | undefined,
+  patch: CronFollowupPatch,
+): CronFollowup {
+  const next: CronFollowup = {
+    expiresAtMs: existing?.expiresAtMs,
+    stopOnReply: existing?.stopOnReply,
+  };
+  if (typeof patch.expiresAtMs === "number" && Number.isFinite(patch.expiresAtMs)) {
+    next.expiresAtMs = Math.max(0, Math.floor(patch.expiresAtMs));
+  }
+  if (typeof patch.stopOnReply === "boolean") {
+    next.stopOnReply = patch.stopOnReply;
+  }
+  return next;
+}
+
+export function isFollowupExpired(job: CronJob, nowMs: number): boolean {
+  const expiresAtMs = job.followup?.expiresAtMs;
+  if (typeof expiresAtMs !== "number" || !Number.isFinite(expiresAtMs)) {
+    return false;
+  }
+  return nowMs >= expiresAtMs;
+}
+
+export function shouldStopFollowup(
+  job: CronJob,
+  result: { status: "ok" | "error" | "skipped"; heartbeatOnly?: boolean },
+): boolean {
+  if (job.followup?.stopOnReply !== true) {
+    return false;
+  }
+  if (result.status !== "ok") {
+    return false;
+  }
+  return result.heartbeatOnly === false;
 }
 
 export function isJobDue(job: CronJob, nowMs: number, opts: { forced: boolean }) {

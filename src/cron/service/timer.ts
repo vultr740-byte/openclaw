@@ -5,9 +5,11 @@ import { sweepCronRunSessions } from "../session-reaper.js";
 import type { CronJob, CronRunOutcome, CronRunStatus, CronRunTelemetry } from "../types.js";
 import {
   computeJobNextRunAtMs,
+  isFollowupExpired,
   nextWakeAtMs,
   recomputeNextRunsForMaintenance,
   resolveJobPayloadTextForMain,
+  shouldStopFollowup,
 } from "./jobs.js";
 import { locked } from "./locked.js";
 import type { CronEvent, CronServiceState } from "./state.js";
@@ -33,6 +35,7 @@ const DEFAULT_JOB_TIMEOUT_MS = 10 * 60_000; // 10 minutes
 
 type TimedCronRunOutcome = CronRunOutcome &
   CronRunTelemetry & {
+    heartbeatOnly?: boolean;
     jobId: string;
     startedAt: number;
     endedAt: number;
@@ -210,6 +213,15 @@ export async function onTimer(state: CronServiceState) {
   try {
     const dueJobs = await locked(state, async () => {
       await ensureLoaded(state, { forceReload: true, skipRecompute: true });
+      const now = state.deps.nowMs();
+      const expired = state.store?.jobs.filter((j) => isFollowupExpired(j, now)) ?? [];
+      if (expired.length > 0 && state.store) {
+        const expiredIds = new Set(expired.map((job) => job.id));
+        state.store.jobs = state.store.jobs.filter((job) => !expiredIds.has(job.id));
+        for (const job of expired) {
+          emit(state, { jobId: job.id, action: "removed" });
+        }
+      }
       const due = findDueJobs(state);
 
       if (due.length === 0) {
@@ -217,13 +229,12 @@ export async function onTimer(state: CronServiceState) {
         // values without execution. This prevents jobs from being silently skipped
         // when the timer wakes up but findDueJobs returns empty (see #13992).
         const changed = recomputeNextRunsForMaintenance(state);
-        if (changed) {
+        if (changed || expired.length > 0) {
           await persist(state);
         }
         return [];
       }
 
-      const now = state.deps.nowMs();
       for (const job of due) {
         job.state.runningAtMs = now;
         job.state.lastError = undefined;
@@ -308,10 +319,12 @@ export async function onTimer(state: CronServiceState) {
             startedAt: result.startedAt,
             endedAt: result.endedAt,
           });
+          const followupExpired = isFollowupExpired(job, result.endedAt);
+          const stopFollowup = shouldStopFollowup(job, result);
 
           emitJobFinished(state, job, result, result.startedAt);
 
-          if (shouldDelete && state.store) {
+          if ((shouldDelete || followupExpired || stopFollowup) && state.store) {
             state.store.jobs = state.store.jobs.filter((j) => j.id !== job.id);
             emit(state, { jobId: job.id, action: "removed" });
           }
@@ -455,7 +468,7 @@ export async function runDueJobs(state: CronServiceState) {
 async function executeJobCore(
   state: CronServiceState,
   job: CronJob,
-): Promise<CronRunOutcome & CronRunTelemetry> {
+): Promise<CronRunOutcome & CronRunTelemetry & { heartbeatOnly?: boolean }> {
   if (job.sessionTarget === "main") {
     const text = resolveJobPayloadTextForMain(job);
     if (!text) {
@@ -538,7 +551,9 @@ async function executeJobCore(
   // See: https://github.com/openclaw/openclaw/issues/15692
   const summaryText = res.summary?.trim();
   const deliveryPlan = resolveCronDeliveryPlan(job);
-  if (summaryText && deliveryPlan.requested && !res.delivered) {
+  const shouldAnnounceSummary =
+    summaryText && deliveryPlan.requested && !res.delivered && res.heartbeatOnly !== true;
+  if (shouldAnnounceSummary) {
     const prefix = "Cron";
     const label =
       res.status === "error" ? `${prefix} (error): ${summaryText}` : `${prefix}: ${summaryText}`;
@@ -560,6 +575,7 @@ async function executeJobCore(
     status: res.status,
     error: res.error,
     summary: res.summary,
+    heartbeatOnly: res.heartbeatOnly,
     sessionId: res.sessionId,
     sessionKey: res.sessionKey,
     model: res.model,
@@ -581,7 +597,13 @@ export async function executeJob(
   if (!job.state) {
     job.state = {};
   }
-  const startedAt = state.deps.nowMs();
+  const now = state.deps.nowMs();
+  if (isFollowupExpired(job, now) && state.store) {
+    state.store.jobs = state.store.jobs.filter((j) => j.id !== job.id);
+    emit(state, { jobId: job.id, action: "removed" });
+    return;
+  }
+  const startedAt = now;
   job.state.runningAtMs = startedAt;
   job.state.lastError = undefined;
   emit(state, { jobId: job.id, action: "started", runAtMs: startedAt });
@@ -603,10 +625,12 @@ export async function executeJob(
     startedAt,
     endedAt,
   });
+  const followupExpired = isFollowupExpired(job, endedAt);
+  const stopFollowup = shouldStopFollowup(job, coreResult);
 
   emitJobFinished(state, job, coreResult, startedAt);
 
-  if (shouldDelete && state.store) {
+  if ((shouldDelete || followupExpired || stopFollowup) && state.store) {
     state.store.jobs = state.store.jobs.filter((j) => j.id !== job.id);
     emit(state, { jobId: job.id, action: "removed" });
   }

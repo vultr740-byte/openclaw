@@ -4,6 +4,7 @@ import {
   computeJobNextRunAtMs,
   createJob,
   findJobOrThrow,
+  isFollowupExpired,
   isJobDue,
   nextWakeAtMs,
   recomputeNextRuns,
@@ -202,6 +203,15 @@ export async function run(state: CronServiceState, id: string, mode?: "due" | "f
       return { ok: true, ran: false, reason: "already-running" as const };
     }
     const now = state.deps.nowMs();
+    if (isFollowupExpired(job, now)) {
+      if (state.store) {
+        state.store.jobs = state.store.jobs.filter((entry) => entry.id !== job.id);
+        emit(state, { jobId: job.id, action: "removed" });
+        await persist(state);
+        armTimer(state);
+      }
+      return { ok: true, ran: false, reason: "not-due" as const };
+    }
     const due = isJobDue(job, now, { forced: mode === "force" });
     if (!due) {
       return { ok: true, ran: false, reason: "not-due" as const };

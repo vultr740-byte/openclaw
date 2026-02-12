@@ -160,6 +160,14 @@
         "wake": { "label": "wake", "detailKeys": ["text", "mode"] }
       }
     },
+    "followup": {
+      "emoji": "⏳",
+      "title": "Followup",
+      "actions": {
+        "schedule": { "label": "schedule", "detailKeys": ["task", "label", "maxDurationMs"] },
+        "cancel": { "label": "cancel", "detailKeys": ["jobId"] }
+      }
+    },
     "gateway": {
       "emoji": "🔌",
       "title": "Gateway",

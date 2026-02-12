@@ -54,6 +54,7 @@ export function resolveSessionDeliveryTarget(params: {
   entry?: SessionEntry;
   requestedChannel?: GatewayMessageChannel | "last";
   explicitTo?: string;
+  explicitAccountId?: string;
   explicitThreadId?: string | number;
   fallbackChannel?: DeliverableMessageChannel;
   allowMismatchedLastTo?: boolean;
@@ -79,6 +80,10 @@ export function resolveSessionDeliveryTarget(params: {
     typeof params.explicitTo === "string" && params.explicitTo.trim()
       ? params.explicitTo.trim()
       : undefined;
+  const explicitAccountId =
+    typeof params.explicitAccountId === "string" && params.explicitAccountId.trim()
+      ? normalizeAccountId(params.explicitAccountId)
+      : undefined;
   const explicitThreadId =
     params.explicitThreadId != null && params.explicitThreadId !== ""
       ? params.explicitThreadId
@@ -98,7 +103,8 @@ export function resolveSessionDeliveryTarget(params: {
     }
   }
 
-  const accountId = channel && channel === lastChannel ? lastAccountId : undefined;
+  const accountId =
+    explicitAccountId ?? (channel && channel === lastChannel ? lastAccountId : undefined);
   const threadId = channel && channel === lastChannel ? lastThreadId : undefined;
   const mode = params.mode ?? (explicitTo ? "explicit" : "implicit");
 

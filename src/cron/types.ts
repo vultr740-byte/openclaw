@@ -22,6 +22,8 @@ export type CronDelivery = {
   mode: CronDeliveryMode;
   channel?: CronMessageChannel;
   to?: string;
+  accountId?: string;
+  threadId?: string | number;
   bestEffort?: boolean;
 };
 
@@ -50,6 +52,12 @@ export type CronRunOutcome = {
   sessionId?: string;
   sessionKey?: string;
 };
+export type CronFollowup = {
+  expiresAtMs?: number;
+  stopOnReply?: boolean;
+};
+
+export type CronFollowupPatch = Partial<CronFollowup>;
 
 export type CronPayload =
   | { kind: "systemEvent"; text: string }
@@ -111,6 +119,7 @@ export type CronJob = {
   wakeMode: CronWakeMode;
   payload: CronPayload;
   delivery?: CronDelivery;
+  followup?: CronFollowup;
   state: CronJobState;
 };
 
@@ -126,5 +135,6 @@ export type CronJobCreate = Omit<CronJob, "id" | "createdAtMs" | "updatedAtMs" |
 export type CronJobPatch = Partial<Omit<CronJob, "id" | "createdAtMs" | "state" | "payload">> & {
   payload?: CronPayloadPatch;
   delivery?: CronDeliveryPatch;
+  followup?: CronFollowupPatch;
   state?: Partial<CronJobState>;
 };

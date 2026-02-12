@@ -72,6 +72,7 @@ export type CronServiceDeps = {
        * https://github.com/openclaw/openclaw/issues/15692
        */
       delivered?: boolean;
+      heartbeatOnly?: boolean;
     } & CronRunOutcome &
       CronRunTelemetry
   >;

@@ -146,6 +146,8 @@ export type RunCronAgentTurnResult = {
    * messages.  See: https://github.com/openclaw/openclaw/issues/15692
    */
   delivered?: boolean;
+  heartbeatOnly?: boolean;
+};
 } & CronRunOutcome &
   CronRunTelemetry;
 
@@ -363,6 +365,8 @@ export async function runCronIsolatedAgentTurn(params: {
   const resolvedDelivery = await resolveDeliveryTarget(cfgWithAgentDefaults, agentId, {
     channel: deliveryPlan.channel ?? "last",
     to: deliveryPlan.to,
+    accountId: deliveryPlan.accountId,
+    threadId: deliveryPlan.threadId,
   });
 
   const { formattedTime, timeLine } = resolveCronStyleNow(params.cfg, now);
@@ -574,7 +578,7 @@ export async function runCronIsolatedAgentTurn(params: {
 
   // Skip delivery for heartbeat-only responses (HEARTBEAT_OK with no real content).
   const ackMaxChars = resolveHeartbeatAckMaxChars(agentCfg);
-  const skipHeartbeatDelivery = deliveryRequested && isHeartbeatOnlyResponse(payloads, ackMaxChars);
+  const heartbeatOnlyRaw = isHeartbeatOnlyResponse(payloads, ackMaxChars);
   const skipMessagingToolDelivery =
     deliveryRequested &&
     runResult.didSendViaMessagingTool === true &&
@@ -585,38 +589,39 @@ export async function runCronIsolatedAgentTurn(params: {
         accountId: resolvedDelivery.accountId,
       }),
     );
+  const heartbeatOnly = heartbeatOnlyRaw && !skipMessagingToolDelivery;
+  const skipHeartbeatDelivery = deliveryRequested && heartbeatOnly;
+  const resultMeta = { summary, outputText, heartbeatOnly };
 
   // `true` means we confirmed at least one outbound send reached the target.
   // Keep this strict so timer fallback can safely decide whether to wake main.
   let delivered = skipMessagingToolDelivery;
   if (deliveryRequested && !skipHeartbeatDelivery && !skipMessagingToolDelivery) {
-    if (resolvedDelivery.error) {
-      if (!deliveryBestEffort) {
-        return withRunSession({
-          status: "error",
-          error: resolvedDelivery.error.message,
-          summary,
-          outputText,
-          ...telemetry,
-        });
+      if (resolvedDelivery.error) {
+        if (!deliveryBestEffort) {
+          return withRunSession({
+            status: "error",
+            error: resolvedDelivery.error.message,
+            ...resultMeta,
+            ...telemetry,
+          });
+        }
+        logWarn(`[cron:${params.job.id}] ${resolvedDelivery.error.message}`);
+        return withRunSession({ status: "ok", ...resultMeta, ...telemetry });
       }
-      logWarn(`[cron:${params.job.id}] ${resolvedDelivery.error.message}`);
-      return withRunSession({ status: "ok", summary, outputText, ...telemetry });
-    }
-    if (!resolvedDelivery.to) {
-      const message = "cron delivery target is missing";
-      if (!deliveryBestEffort) {
-        return withRunSession({
-          status: "error",
-          error: message,
-          summary,
-          outputText,
-          ...telemetry,
-        });
+      if (!resolvedDelivery.to) {
+        const message = "cron delivery target is missing";
+        if (!deliveryBestEffort) {
+          return withRunSession({
+            status: "error",
+            error: message,
+            ...resultMeta,
+            ...telemetry,
+          });
+        }
+        logWarn(`[cron:${params.job.id}] ${message}`);
+        return withRunSession({ status: "ok", ...resultMeta, ...telemetry });
       }
-      logWarn(`[cron:${params.job.id}] ${message}`);
-      return withRunSession({ status: "ok", summary, outputText, ...telemetry });
-    }
     const identity = resolveAgentOutboundIdentity(cfgWithAgentDefaults, agentId);
 
     // Route text-only cron announce output back through the main session so it
@@ -753,8 +758,7 @@ export async function runCronIsolatedAgentTurn(params: {
           if (!deliveryBestEffort) {
             return withRunSession({
               status: "error",
-              summary,
-              outputText,
+              ...resultMeta,
               error: message,
               ...telemetry,
             });
@@ -765,9 +769,8 @@ export async function runCronIsolatedAgentTurn(params: {
         if (!deliveryBestEffort) {
           return withRunSession({
             status: "error",
-            summary,
-            outputText,
             error: String(err),
+            ...resultMeta,
             ...telemetry,
           });
         }
@@ -776,5 +779,5 @@ export async function runCronIsolatedAgentTurn(params: {
     }
   }
 
-  return withRunSession({ status: "ok", summary, outputText, delivered, ...telemetry });
+  return withRunSession({ status: "ok", ...resultMeta, delivered, ...telemetry });
 }
