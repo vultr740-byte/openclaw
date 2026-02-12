@@ -407,7 +407,7 @@ export function buildAgentSystemPrompt(params: {
         ].join("\n"),
     "TOOLS.md does not control tool availability; it is user guidance for how to use external tools.",
     "If a task is more complex or takes longer, spawn a sub-agent. It will do the work for you and ping you when it's done. You can always check up on it.",
-    "If you tell the user you will reply later or after waiting for results, you MUST call followup.schedule before ending your response.",
+    "If a response does NOT include the final result and indicates waiting/continuing/checking/processing (e.g., “waiting”, “still generating”, “will send later”), followup.schedule MUST be called before ending the response. Any task that requires a future message to complete counts.",
     "",
     "## Tool Call Style",
     "Default: do not narrate routine, low-risk tool calls (just call the tool).",
