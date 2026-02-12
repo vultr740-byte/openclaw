@@ -22,9 +22,11 @@ import {
 import { finalizeInboundContext } from "../auto-reply/reply/inbound-context.js";
 import { dispatchReplyWithBufferedBlockDispatcher } from "../auto-reply/reply/provider-dispatcher.js";
 import { listSkillCommandsForAgents } from "../auto-reply/skill-commands.js";
+import { normalizeElevatedLevel } from "../auto-reply/thinking.js";
 import { resolveCommandAuthorizedFromAuthorizers } from "../channels/command-gating.js";
 import { createReplyPrefixOptions } from "../channels/reply-prefix.js";
 import { resolveMarkdownTableMode } from "../config/markdown-tables.js";
+import { loadSessionStore, resolveStorePath } from "../config/sessions.js";
 import { resolveTelegramCustomCommands } from "../config/telegram-custom-commands.js";
 import {
   normalizeTelegramCommandName,
@@ -447,57 +449,6 @@ export const registerTelegramNativeCommands = ({
             messageThreadId,
           });
           const threadParams = buildTelegramThreadParams(threadSpec) ?? {};
-
-          const commandDefinition = findCommandByNativeName(command.name, "telegram");
-          const rawText = ctx.match?.trim() ?? "";
-          const commandArgs = commandDefinition
-            ? parseCommandArgs(commandDefinition, rawText)
-            : rawText
-              ? ({ raw: rawText } satisfies CommandArgs)
-              : undefined;
-          const prompt = commandDefinition
-            ? buildCommandTextFromArgs(commandDefinition, commandArgs)
-            : rawText
-              ? `/${command.name} ${rawText}`
-              : `/${command.name}`;
-          const menu = commandDefinition
-            ? resolveCommandArgMenu({
-                command: commandDefinition,
-                args: commandArgs,
-                cfg,
-              })
-            : null;
-          if (menu && commandDefinition) {
-            const title =
-              menu.title ??
-              `Choose ${menu.arg.description || menu.arg.name} for /${commandDefinition.nativeName ?? commandDefinition.key}.`;
-            const rows: Array<Array<{ text: string; callback_data: string }>> = [];
-            for (let i = 0; i < menu.choices.length; i += 2) {
-              const slice = menu.choices.slice(i, i + 2);
-              rows.push(
-                slice.map((choice) => {
-                  const args: CommandArgs = {
-                    values: { [menu.arg.name]: choice.value },
-                  };
-                  return {
-                    text: choice.label,
-                    callback_data: buildCommandTextFromArgs(commandDefinition, args),
-                  };
-                }),
-              );
-            }
-            const replyMarkup = buildInlineKeyboard(rows);
-            await withTelegramApiErrorLogging({
-              operation: "sendMessage",
-              runtime,
-              fn: () =>
-                bot.api.sendMessage(chatId, title, {
-                  ...(replyMarkup ? { reply_markup: replyMarkup } : {}),
-                  ...threadParams,
-                }),
-            });
-            return;
-          }
           const parentPeer = buildTelegramParentPeer({ isGroup, resolvedThreadId, chatId });
           const route = resolveAgentRoute({
             cfg,
@@ -520,6 +471,78 @@ export const registerTelegramNativeCommands = ({
                 })
               : null;
           const sessionKey = threadKeys?.sessionKey ?? baseSessionKey;
+
+          const commandDefinition = findCommandByNativeName(command.name, "telegram");
+          const rawText = ctx.match?.trim() ?? "";
+          const commandArgs = commandDefinition
+            ? parseCommandArgs(commandDefinition, rawText)
+            : rawText
+              ? ({ raw: rawText } satisfies CommandArgs)
+              : undefined;
+          const prompt = commandDefinition
+            ? buildCommandTextFromArgs(commandDefinition, commandArgs)
+            : rawText
+              ? `/${command.name} ${rawText}`
+              : `/${command.name}`;
+          const menu = commandDefinition
+            ? resolveCommandArgMenu({
+                command: commandDefinition,
+                args: commandArgs,
+                cfg,
+              })
+            : null;
+          const menuWithState =
+            menu && commandDefinition?.key === "elevated"
+              ? (() => {
+                  const storePath = resolveStorePath(cfg.session?.store, {
+                    agentId: route.agentId,
+                  });
+                  const store = loadSessionStore(storePath);
+                  const sessionEntry = store[sessionKey];
+                  const rawElevatedLevel =
+                    sessionEntry?.elevatedLevel ?? cfg.agents?.defaults?.elevatedDefault;
+                  const currentElevatedLevel = normalizeElevatedLevel(rawElevatedLevel) ?? "off";
+                  const choices = menu.choices.map((choice) => ({
+                    ...choice,
+                    label:
+                      choice.value === currentElevatedLevel
+                        ? `${choice.label} (current)`
+                        : choice.label,
+                  }));
+                  return { ...menu, choices };
+                })()
+              : menu;
+          if (menuWithState && commandDefinition) {
+            const title =
+              menuWithState.title ??
+              `Choose ${menuWithState.arg.description || menuWithState.arg.name} for /${commandDefinition.nativeName ?? commandDefinition.key}.`;
+            const rows: Array<Array<{ text: string; callback_data: string }>> = [];
+            for (let i = 0; i < menuWithState.choices.length; i += 2) {
+              const slice = menuWithState.choices.slice(i, i + 2);
+              rows.push(
+                slice.map((choice) => {
+                  const args: CommandArgs = {
+                    values: { [menuWithState.arg.name]: choice.value },
+                  };
+                  return {
+                    text: choice.label,
+                    callback_data: buildCommandTextFromArgs(commandDefinition, args),
+                  };
+                }),
+              );
+            }
+            const replyMarkup = buildInlineKeyboard(rows);
+            await withTelegramApiErrorLogging({
+              operation: "sendMessage",
+              runtime,
+              fn: () =>
+                bot.api.sendMessage(chatId, title, {
+                  ...(replyMarkup ? { reply_markup: replyMarkup } : {}),
+                  ...threadParams,
+                }),
+            });
+            return;
+          }
           const tableMode = resolveMarkdownTableMode({
             cfg,
             channel: "telegram",
