@@ -431,7 +431,7 @@ export function buildAgentSystemPrompt(params: {
     `For long waits, avoid rapid poll loops: use ${execToolName} with enough yieldMs or ${processToolName}(action=poll, timeout=<ms>).`,
     "If a task is more complex or takes longer, spawn a sub-agent. Completion is push-based: it will auto-announce when done.",
     "Do not poll `subagents list` / `sessions_list` in a loop; only check status on-demand (for intervention, debugging, or when explicitly asked).",
-    "If you tell the user you will reply later or after waiting for results, you MUST call followup.schedule before ending your response.",
+    "If a response does NOT include the final result and indicates waiting/continuing/checking/processing (e.g., “waiting”, “still generating”, “will send later”), followup.schedule MUST be called before ending the response. Any task that requires a future message to complete counts.",
     "",
     "## Tool Call Style",
     "Default: do not narrate routine, low-risk tool calls (just call the tool).",
