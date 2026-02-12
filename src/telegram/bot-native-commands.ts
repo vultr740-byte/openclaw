@@ -12,11 +12,13 @@ import {
 import { finalizeInboundContext } from "../auto-reply/reply/inbound-context.js";
 import { dispatchReplyWithBufferedBlockDispatcher } from "../auto-reply/reply/provider-dispatcher.js";
 import { listSkillCommandsForAgents } from "../auto-reply/skill-commands.js";
+import { normalizeElevatedLevel } from "../auto-reply/thinking.js";
 import { resolveCommandAuthorizedFromAuthorizers } from "../channels/command-gating.js";
 import { createReplyPrefixOptions } from "../channels/reply-prefix.js";
 import type { OpenClawConfig } from "../config/config.js";
 import type { ChannelGroupPolicy } from "../config/group-policy.js";
 import { resolveMarkdownTableMode } from "../config/markdown-tables.js";
+import { loadSessionStore, resolveStorePath } from "../config/sessions.js";
 import {
   normalizeTelegramCommandName,
   resolveTelegramCustomCommands,
@@ -487,6 +489,17 @@ export const registerTelegramNativeCommands = ({
             chunkMode,
           });
           const threadParams = buildTelegramThreadParams(threadSpec) ?? {};
+          const baseSessionKey = route.sessionKey;
+          // DMs: use raw messageThreadId for thread sessions (not resolvedThreadId which is for forums)
+          const dmThreadId = threadSpec.scope === "dm" ? threadSpec.id : undefined;
+          const threadKeys =
+            dmThreadId != null
+              ? resolveThreadSessionKeys({
+                  baseSessionKey,
+                  threadId: String(dmThreadId),
+                })
+              : null;
+          const sessionKey = threadKeys?.sessionKey ?? baseSessionKey;
 
           const commandDefinition = findCommandByNativeName(command.name, "telegram");
           const rawText = ctx.match?.trim() ?? "";
@@ -507,17 +520,38 @@ export const registerTelegramNativeCommands = ({
                 cfg,
               })
             : null;
-          if (menu && commandDefinition) {
+          const menuWithState =
+            menu && commandDefinition?.key === "elevated"
+              ? (() => {
+                  const storePath = resolveStorePath(cfg.session?.store, {
+                    agentId: route.agentId,
+                  });
+                  const store = loadSessionStore(storePath);
+                  const sessionEntry = store[sessionKey];
+                  const rawElevatedLevel =
+                    sessionEntry?.elevatedLevel ?? cfg.agents?.defaults?.elevatedDefault;
+                  const currentElevatedLevel = normalizeElevatedLevel(rawElevatedLevel) ?? "off";
+                  const choices = menu.choices.map((choice) => ({
+                    ...choice,
+                    label:
+                      choice.value === currentElevatedLevel
+                        ? `${choice.label} (current)`
+                        : choice.label,
+                  }));
+                  return { ...menu, choices };
+                })()
+              : menu;
+          if (menuWithState && commandDefinition) {
             const title =
-              menu.title ??
-              `Choose ${menu.arg.description || menu.arg.name} for /${commandDefinition.nativeName ?? commandDefinition.key}.`;
+              menuWithState.title ??
+              `Choose ${menuWithState.arg.description || menuWithState.arg.name} for /${commandDefinition.nativeName ?? commandDefinition.key}.`;
             const rows: Array<Array<{ text: string; callback_data: string }>> = [];
-            for (let i = 0; i < menu.choices.length; i += 2) {
-              const slice = menu.choices.slice(i, i + 2);
+            for (let i = 0; i < menuWithState.choices.length; i += 2) {
+              const slice = menuWithState.choices.slice(i, i + 2);
               rows.push(
                 slice.map((choice) => {
                   const args: CommandArgs = {
-                    values: { [menu.arg.name]: choice.value },
+                    values: { [menuWithState.arg.name]: choice.value },
                   };
                   return {
                     text: choice.label,
@@ -538,17 +572,6 @@ export const registerTelegramNativeCommands = ({
             });
             return;
           }
-          const baseSessionKey = route.sessionKey;
-          // DMs: use raw messageThreadId for thread sessions (not resolvedThreadId which is for forums)
-          const dmThreadId = threadSpec.scope === "dm" ? threadSpec.id : undefined;
-          const threadKeys =
-            dmThreadId != null
-              ? resolveThreadSessionKeys({
-                  baseSessionKey,
-                  threadId: String(dmThreadId),
-                })
-              : null;
-          const sessionKey = threadKeys?.sessionKey ?? baseSessionKey;
           const skillFilter = firstDefined(topicConfig?.skills, groupConfig?.skills);
           const systemPromptParts = [
             groupConfig?.systemPrompt?.trim() || null,
