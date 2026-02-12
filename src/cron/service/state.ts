@@ -43,6 +43,7 @@ export type CronServiceDeps = {
     summary?: string;
     /** Last non-empty agent text output (not truncated). */
     outputText?: string;
+    heartbeatOnly?: boolean;
     error?: string;
     sessionId?: string;
     sessionKey?: string;

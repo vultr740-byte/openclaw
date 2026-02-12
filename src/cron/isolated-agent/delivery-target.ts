@@ -19,6 +19,8 @@ export async function resolveDeliveryTarget(
   jobPayload: {
     channel?: "last" | ChannelId;
     to?: string;
+    accountId?: string;
+    threadId?: string | number;
   },
 ): Promise<{
   channel: Exclude<OutboundChannel, "none">;
@@ -30,6 +32,16 @@ export async function resolveDeliveryTarget(
 }> {
   const requestedChannel = typeof jobPayload.channel === "string" ? jobPayload.channel : "last";
   const explicitTo = typeof jobPayload.to === "string" ? jobPayload.to : undefined;
+  const explicitAccountId =
+    typeof jobPayload.accountId === "string" ? jobPayload.accountId.trim() : undefined;
+  const rawThreadId =
+    typeof jobPayload.threadId === "number" && Number.isFinite(jobPayload.threadId)
+      ? Math.trunc(jobPayload.threadId)
+      : typeof jobPayload.threadId === "string"
+        ? jobPayload.threadId.trim()
+        : undefined;
+  const explicitThreadId =
+    typeof rawThreadId === "string" ? (rawThreadId ? rawThreadId : undefined) : rawThreadId;
   const allowMismatchedLastTo = requestedChannel === "last";
 
   const sessionCfg = cfg.session;
@@ -42,6 +54,8 @@ export async function resolveDeliveryTarget(
     entry: main,
     requestedChannel,
     explicitTo,
+    explicitAccountId,
+    explicitThreadId,
     allowMismatchedLastTo,
   });
 
@@ -60,6 +74,8 @@ export async function resolveDeliveryTarget(
         entry: main,
         requestedChannel,
         explicitTo,
+        explicitAccountId,
+        explicitThreadId,
         fallbackChannel,
         allowMismatchedLastTo,
         mode: preliminary.mode,
@@ -75,9 +91,11 @@ export async function resolveDeliveryTarget(
   // supergroup topic) from being sent to a different target (e.g. a private
   // chat) where they would cause API errors.
   const threadId =
-    resolved.threadId && resolved.to && resolved.to === resolved.lastTo
-      ? resolved.threadId
-      : undefined;
+    explicitThreadId !== undefined
+      ? explicitThreadId
+      : resolved.threadId && resolved.to && resolved.to === resolved.lastTo
+        ? resolved.threadId
+        : undefined;
 
   if (!toCandidate) {
     return {

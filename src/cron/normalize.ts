@@ -1,6 +1,7 @@
 import type { CronJobCreate, CronJobPatch } from "./types.js";
 import { sanitizeAgentId } from "../routing/session-key.js";
 import { isRecord } from "../utils.js";
+import { normalizeAccountId } from "../utils/account-id.js";
 import { parseAbsoluteTimeMs } from "./parse.js";
 import { migrateLegacyCronPayload } from "./payload-migration.js";
 import { inferLegacyName } from "./service/normalize.js";
@@ -161,6 +162,49 @@ function coerceDelivery(delivery: UnknownRecord) {
     } else {
       delete next.to;
     }
+  }
+  if ("accountId" in delivery) {
+    if (typeof delivery.accountId === "string") {
+      const normalized = normalizeAccountId(delivery.accountId);
+      if (normalized) {
+        next.accountId = normalized;
+      } else {
+        delete next.accountId;
+      }
+    } else {
+      delete next.accountId;
+    }
+  }
+  if ("threadId" in delivery) {
+    const threadId =
+      typeof delivery.threadId === "number" && Number.isFinite(delivery.threadId)
+        ? Math.trunc(delivery.threadId)
+        : typeof delivery.threadId === "string"
+          ? delivery.threadId.trim()
+          : undefined;
+    if (threadId !== undefined && threadId !== "") {
+      next.threadId = threadId;
+    } else {
+      delete next.threadId;
+    }
+  }
+  if ("bestEffort" in delivery && typeof delivery.bestEffort !== "boolean") {
+    delete next.bestEffort;
+  }
+  return next;
+}
+
+function coerceFollowup(followup: UnknownRecord) {
+  const next: UnknownRecord = { ...followup };
+  if ("expiresAtMs" in followup) {
+    if (typeof followup.expiresAtMs === "number" && Number.isFinite(followup.expiresAtMs)) {
+      next.expiresAtMs = Math.max(0, Math.floor(followup.expiresAtMs));
+    } else {
+      delete next.expiresAtMs;
+    }
+  }
+  if ("stopOnReply" in followup && typeof followup.stopOnReply !== "boolean") {
+    delete next.stopOnReply;
   }
   return next;
 }
@@ -388,6 +432,19 @@ export function normalizeCronJobInput(
 
   if (isRecord(base.delivery)) {
     next.delivery = coerceDelivery(base.delivery);
+  } else if ("delivery" in base) {
+    delete next.delivery;
+  }
+
+  if (isRecord(base.followup)) {
+    const coerced = coerceFollowup(base.followup);
+    if (Object.keys(coerced).length > 0) {
+      next.followup = coerced;
+    } else {
+      delete next.followup;
+    }
+  } else if ("followup" in base) {
+    delete next.followup;
   }
 
   if ("isolation" in next) {

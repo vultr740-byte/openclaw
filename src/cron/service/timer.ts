@@ -6,9 +6,11 @@ import { resolveCronDeliveryPlan } from "../delivery.js";
 import { sweepCronRunSessions } from "../session-reaper.js";
 import {
   computeJobNextRunAtMs,
+  isFollowupExpired,
   nextWakeAtMs,
   recomputeNextRuns,
   resolveJobPayloadTextForMain,
+  shouldStopFollowup,
 } from "./jobs.js";
 import { locked } from "./locked.js";
 import { ensureLoaded, persist } from "./store.js";
@@ -164,17 +166,25 @@ export async function onTimer(state: CronServiceState) {
   try {
     const dueJobs = await locked(state, async () => {
       await ensureLoaded(state, { forceReload: true, skipRecompute: true });
+      const now = state.deps.nowMs();
+      const expired = state.store?.jobs.filter((j) => isFollowupExpired(j, now)) ?? [];
+      if (expired.length > 0 && state.store) {
+        const expiredIds = new Set(expired.map((job) => job.id));
+        state.store.jobs = state.store.jobs.filter((job) => !expiredIds.has(job.id));
+        for (const job of expired) {
+          emit(state, { jobId: job.id, action: "removed" });
+        }
+      }
       const due = findDueJobs(state);
 
       if (due.length === 0) {
         const changed = recomputeNextRuns(state);
-        if (changed) {
+        if (changed || expired.length > 0) {
           await persist(state);
         }
         return [];
       }
 
-      const now = state.deps.nowMs();
       for (const job of due) {
         job.state.runningAtMs = now;
         job.state.lastError = undefined;
@@ -194,6 +204,7 @@ export async function onTimer(state: CronServiceState) {
       summary?: string;
       sessionId?: string;
       sessionKey?: string;
+      heartbeatOnly?: boolean;
       startedAt: number;
       endedAt: number;
     }> = [];
@@ -251,6 +262,8 @@ export async function onTimer(state: CronServiceState) {
             startedAt: result.startedAt,
             endedAt: result.endedAt,
           });
+          const followupExpired = isFollowupExpired(job, result.endedAt);
+          const stopFollowup = shouldStopFollowup(job, result);
 
           emit(state, {
             jobId: job.id,
@@ -265,7 +278,7 @@ export async function onTimer(state: CronServiceState) {
             nextRunAtMs: job.state.nextRunAtMs,
           });
 
-          if (shouldDelete && state.store) {
+          if ((shouldDelete || followupExpired || stopFollowup) && state.store) {
             state.store.jobs = state.store.jobs.filter((j) => j.id !== job.id);
             emit(state, { jobId: job.id, action: "removed" });
           }
@@ -398,6 +411,7 @@ async function executeJobCore(
   summary?: string;
   sessionId?: string;
   sessionKey?: string;
+  heartbeatOnly?: boolean;
 }> {
   if (job.sessionTarget === "main") {
     const text = resolveJobPayloadTextForMain(job);
@@ -459,7 +473,8 @@ async function executeJobCore(
   // Post a short summary back to the main session.
   const summaryText = res.summary?.trim();
   const deliveryPlan = resolveCronDeliveryPlan(job);
-  if (summaryText && deliveryPlan.requested) {
+  const shouldAnnounceSummary = summaryText && deliveryPlan.requested && res.heartbeatOnly !== true;
+  if (shouldAnnounceSummary) {
     const prefix = "Cron";
     const label =
       res.status === "error" ? `${prefix} (error): ${summaryText}` : `${prefix}: ${summaryText}`;
@@ -473,6 +488,7 @@ async function executeJobCore(
     status: res.status,
     error: res.error,
     summary: res.summary,
+    heartbeatOnly: res.heartbeatOnly,
     sessionId: res.sessionId,
     sessionKey: res.sessionKey,
   };
@@ -491,7 +507,13 @@ export async function executeJob(
   if (!job.state) {
     job.state = {};
   }
-  const startedAt = state.deps.nowMs();
+  const now = state.deps.nowMs();
+  if (isFollowupExpired(job, now) && state.store) {
+    state.store.jobs = state.store.jobs.filter((j) => j.id !== job.id);
+    emit(state, { jobId: job.id, action: "removed" });
+    return;
+  }
+  const startedAt = now;
   job.state.runningAtMs = startedAt;
   job.state.lastError = undefined;
   emit(state, { jobId: job.id, action: "started", runAtMs: startedAt });
@@ -516,6 +538,8 @@ export async function executeJob(
     startedAt,
     endedAt,
   });
+  const followupExpired = isFollowupExpired(job, endedAt);
+  const stopFollowup = shouldStopFollowup(job, coreResult);
 
   emit(state, {
     jobId: job.id,
@@ -530,7 +554,7 @@ export async function executeJob(
     nextRunAtMs: job.state.nextRunAtMs,
   });
 
-  if (shouldDelete && state.store) {
+  if ((shouldDelete || followupExpired || stopFollowup) && state.store) {
     state.store.jobs = state.store.jobs.filter((j) => j.id !== job.id);
     emit(state, { jobId: job.id, action: "removed" });
   }

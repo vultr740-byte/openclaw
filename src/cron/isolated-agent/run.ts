@@ -102,6 +102,7 @@ export type RunCronAgentTurnResult = {
   summary?: string;
   /** Last non-empty agent text output (not truncated). */
   outputText?: string;
+  heartbeatOnly?: boolean;
   error?: string;
   sessionId?: string;
   sessionKey?: string;
@@ -286,6 +287,8 @@ export async function runCronIsolatedAgentTurn(params: {
   const resolvedDelivery = await resolveDeliveryTarget(cfgWithAgentDefaults, agentId, {
     channel: deliveryPlan.channel ?? "last",
     to: deliveryPlan.to,
+    accountId: deliveryPlan.accountId,
+    threadId: deliveryPlan.threadId,
   });
 
   const userTimezone = resolveUserTimezone(params.cfg.agents?.defaults?.userTimezone);
@@ -483,7 +486,7 @@ export async function runCronIsolatedAgentTurn(params: {
 
   // Skip delivery for heartbeat-only responses (HEARTBEAT_OK with no real content).
   const ackMaxChars = resolveHeartbeatAckMaxChars(agentCfg);
-  const skipHeartbeatDelivery = deliveryRequested && isHeartbeatOnlyResponse(payloads, ackMaxChars);
+  const heartbeatOnlyRaw = isHeartbeatOnlyResponse(payloads, ackMaxChars);
   const skipMessagingToolDelivery =
     deliveryRequested &&
     runResult.didSendViaMessagingTool === true &&
@@ -494,6 +497,9 @@ export async function runCronIsolatedAgentTurn(params: {
         accountId: resolvedDelivery.accountId,
       }),
     );
+  const heartbeatOnly = heartbeatOnlyRaw && !skipMessagingToolDelivery;
+  const skipHeartbeatDelivery = deliveryRequested && heartbeatOnly;
+  const resultMeta = { summary, outputText, heartbeatOnly };
 
   if (deliveryRequested && !skipHeartbeatDelivery && !skipMessagingToolDelivery) {
     if (resolvedDelivery.error) {
@@ -501,12 +507,11 @@ export async function runCronIsolatedAgentTurn(params: {
         return withRunSession({
           status: "error",
           error: resolvedDelivery.error.message,
-          summary,
-          outputText,
+          ...resultMeta,
         });
       }
       logWarn(`[cron:${params.job.id}] ${resolvedDelivery.error.message}`);
-      return withRunSession({ status: "ok", summary, outputText });
+      return withRunSession({ status: "ok", ...resultMeta });
     }
     if (!resolvedDelivery.to) {
       const message = "cron delivery target is missing";
@@ -514,12 +519,11 @@ export async function runCronIsolatedAgentTurn(params: {
         return withRunSession({
           status: "error",
           error: message,
-          summary,
-          outputText,
+          ...resultMeta,
         });
       }
       logWarn(`[cron:${params.job.id}] ${message}`);
-      return withRunSession({ status: "ok", summary, outputText });
+      return withRunSession({ status: "ok", ...resultMeta });
     }
     // Shared subagent announce flow is text-based; keep direct outbound delivery
     // for media/channel payloads so structured content is preserved.
@@ -537,7 +541,7 @@ export async function runCronIsolatedAgentTurn(params: {
         });
       } catch (err) {
         if (!deliveryBestEffort) {
-          return withRunSession({ status: "error", summary, outputText, error: String(err) });
+          return withRunSession({ status: "error", error: String(err), ...resultMeta });
         }
       }
     } else if (synthesizedText) {
@@ -576,8 +580,7 @@ export async function runCronIsolatedAgentTurn(params: {
           if (!deliveryBestEffort) {
             return withRunSession({
               status: "error",
-              summary,
-              outputText,
+              ...resultMeta,
               error: message,
             });
           }
@@ -585,12 +588,12 @@ export async function runCronIsolatedAgentTurn(params: {
         }
       } catch (err) {
         if (!deliveryBestEffort) {
-          return withRunSession({ status: "error", summary, outputText, error: String(err) });
+          return withRunSession({ status: "error", error: String(err), ...resultMeta });
         }
         logWarn(`[cron:${params.job.id}] ${String(err)}`);
       }
     }
   }
 
-  return withRunSession({ status: "ok", summary, outputText });
+  return withRunSession({ status: "ok", ...resultMeta });
 }
