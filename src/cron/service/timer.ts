@@ -487,7 +487,7 @@ async function executeJobCore(
       contextKey: `cron:${job.id}`,
     });
     if (job.wakeMode === "now" && state.deps.runHeartbeatOnce) {
-      const reason = `cron:${job.id}`;
+      const reason = job.followup ? `followup:${job.id}` : `cron:${job.id}`;
       const delay = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
       const maxWaitMs = state.deps.wakeNowHeartbeatBusyMaxWaitMs ?? 2 * 60_000;
       const retryDelayMs = state.deps.wakeNowHeartbeatBusyRetryDelayMs ?? 250;
@@ -525,8 +525,9 @@ async function executeJobCore(
         return { status: "error", error: heartbeatResult.reason, summary: text };
       }
     } else {
+      const reason = job.followup ? `followup:${job.id}` : `cron:${job.id}`;
       state.deps.requestHeartbeatNow({
-        reason: `cron:${job.id}`,
+        reason,
         agentId: job.agentId,
         sessionKey: job.sessionKey,
       });
@@ -564,7 +565,7 @@ async function executeJobCore(
     });
     if (job.wakeMode === "now") {
       state.deps.requestHeartbeatNow({
-        reason: `cron:${job.id}`,
+        reason: job.followup ? `followup:${job.id}` : `cron:${job.id}`,
         agentId: job.agentId,
         sessionKey: job.sessionKey,
       });

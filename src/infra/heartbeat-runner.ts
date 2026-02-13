@@ -62,7 +62,8 @@ import {
   resolveHeartbeatDeliveryTarget,
   resolveHeartbeatSenderContext,
 } from "./outbound/targets.js";
-import { peekSystemEventEntries } from "./system-events.js";
+import { drainSystemEventEntries } from "./system-events.js";
+
 
 export type HeartbeatDeps = OutboundSendDeps &
   ChannelHeartbeatDeps & {
@@ -103,7 +104,14 @@ const EXEC_EVENT_PROMPT =
   "An async command you ran earlier has completed. The result is shown in the system messages above. " +
   "Please relay the command output to the user in a helpful way. If the command succeeded, share the relevant output. " +
   "If it failed, explain what went wrong.";
+// Prompt used when a follow-up polling job fires and should relay pending system events.
+// Followups are not user reminders; keep the language neutral.
+const FOLLOWUP_EVENT_PROMPT =
+  "A scheduled follow-up check has fired. The relevant pending results are shown in the system messages above. " +
+  "Please relay them to the user in a helpful way.";
+
 export { isCronSystemEvent };
+
 
 type HeartbeatAgentState = {
   agentId: string;
@@ -512,6 +520,7 @@ export async function runHeartbeatOnce(opts: {
   const isExecEventReason = opts.reason === "exec-event";
   const isCronEventReason = Boolean(opts.reason?.startsWith("cron:"));
   const isWakeReason = opts.reason === "wake" || Boolean(opts.reason?.startsWith("hook:"));
+  const isFollowupEventReason = Boolean(opts.reason?.startsWith("followup:"));
   const workspaceDir = resolveAgentWorkspaceDir(cfg, agentId);
   const heartbeatFilePath = path.join(workspaceDir, DEFAULT_HEARTBEAT_FILENAME);
   try {
@@ -520,7 +529,8 @@ export async function runHeartbeatOnce(opts: {
       isHeartbeatContentEffectivelyEmpty(heartbeatFileContent) &&
       !isExecEventReason &&
       !isCronEventReason &&
-      !isWakeReason
+      !isWakeReason &&
+      !isFollowupEventReason
     ) {
       emitHeartbeatEvent({
         status: "skipped",
@@ -569,37 +579,42 @@ export async function runHeartbeatOnce(opts: {
     accountId: delivery.accountId,
   }).responsePrefix;
 
-  // Check if this is an exec event or cron event with pending system events.
+  // Check if this is an exec, followup, or cron event with pending system events.
   // If so, use a specialized prompt that instructs the model to relay the result
   // instead of the standard heartbeat prompt with "reply HEARTBEAT_OK".
-  const isExecEvent = opts.reason === "exec-event";
-  const pendingEventEntries = peekSystemEventEntries(sessionKey);
-  const hasTaggedCronEvents = pendingEventEntries.some((event) =>
-    event.contextKey?.startsWith("cron:"),
-  );
-  const shouldInspectPendingEvents = isExecEvent || isCronEventReason || hasTaggedCronEvents;
-  const pendingEvents = shouldInspectPendingEvents
-    ? pendingEventEntries.map((event) => event.text)
-    : [];
-  const cronEvents = pendingEventEntries
-    .filter(
-      (event) =>
-        (isCronEventReason || event.contextKey?.startsWith("cron:")) &&
-        isCronSystemEvent(event.text),
-    )
-    .map((event) => event.text);
+  const isExecEvent = isExecEventReason;
+  const isCronEvent = isCronEventReason;
+  const isFollowupEvent = isFollowupEventReason;
+
+  // For event-style heartbeats, consume system events exactly once to avoid duplicate relays
+  // when multiple wake reasons fire (e.g., exec-event + followup/cron).
+  const eventEntries =
+    isExecEvent || isCronEvent || isFollowupEvent ? drainSystemEventEntries(sessionKey) : [];
+  const pendingEvents = eventEntries.map((event) => event.text);
+
   const hasExecCompletion = pendingEvents.some(isExecCompletionEvent);
+  const cronEvents = isCronEvent ? pendingEvents.filter(isCronSystemEvent) : [];
   const hasCronEvents = cronEvents.length > 0;
+  const hasFollowupEvents = isFollowupEvent && pendingEvents.length > 0;
+
   const prompt = hasExecCompletion
     ? EXEC_EVENT_PROMPT
-    : hasCronEvents
-      ? buildCronEventPrompt(cronEvents)
-      : resolveHeartbeatPrompt(cfg, heartbeat);
+    : hasFollowupEvents
+      ? FOLLOWUP_EVENT_PROMPT
+      : hasCronEvents
+        ? buildCronEventPrompt(cronEvents)
+        : resolveHeartbeatPrompt(cfg, heartbeat);
   const ctx = {
     Body: appendCronStyleCurrentTimeLine(prompt, cfg, startedAt),
     From: sender,
     To: sender,
-    Provider: hasExecCompletion ? "exec-event" : hasCronEvents ? "cron-event" : "heartbeat",
+    Provider: hasExecCompletion
+      ? "exec-event"
+      : hasFollowupEvents
+        ? "followup-event"
+        : hasCronEvents
+          ? "cron-event"
+          : "heartbeat",
     SessionKey: sessionKey,
   };
   if (!visibility.showAlerts && !visibility.showOk && !visibility.useIndicator) {
