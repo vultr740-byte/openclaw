@@ -589,23 +589,19 @@ export async function runHeartbeatOnce(opts: {
   const isCronEvent = Boolean(opts.reason?.startsWith("cron:"));
   const isFollowupEvent = Boolean(opts.reason?.startsWith("followup:"));
 
-  // For event-style heartbeats, consume system events exactly once to avoid duplicate relays
-  // when multiple wake reasons fire (e.g., exec-event + followup/cron).
-  const eventEntries =
-    isExecEvent || isCronEvent || isFollowupEvent ? drainSystemEventEntries(sessionKey) : [];
+  // For event-style heartbeats, consume system events exactly once to avoid duplicate relays.
+  // Followup wakes are "wake-only" and should NOT drain/relay system events.
+  const eventEntries = isExecEvent || isCronEvent ? drainSystemEventEntries(sessionKey) : [];
   const pendingEvents = eventEntries.map((e) => e.text);
 
   const hasExecCompletion = pendingEvents.some((evt) => evt.includes("Exec finished"));
   const hasCronEvents = isCronEvent && pendingEvents.length > 0;
-  const hasFollowupEvents = isFollowupEvent && pendingEvents.length > 0;
 
   const prompt = hasExecCompletion
     ? EXEC_EVENT_PROMPT
-    : hasFollowupEvents
-      ? FOLLOWUP_EVENT_PROMPT
-      : hasCronEvents
-        ? CRON_EVENT_PROMPT
-        : resolveHeartbeatPrompt(cfg, heartbeat);
+    : hasCronEvents
+      ? CRON_EVENT_PROMPT
+      : resolveHeartbeatPrompt(cfg, heartbeat);
 
   const ctx = {
     Body: prompt,
@@ -613,8 +609,8 @@ export async function runHeartbeatOnce(opts: {
     To: sender,
     Provider: hasExecCompletion
       ? "exec-event"
-      : hasFollowupEvents
-        ? "followup-event"
+      : isFollowupEvent
+        ? "followup-wake"
         : hasCronEvents
           ? "cron-event"
           : "heartbeat",
