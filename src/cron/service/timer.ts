@@ -481,12 +481,19 @@ async function executeJobCore(
             : 'main job requires payload.kind="systemEvent"',
       };
     }
-    state.deps.enqueueSystemEvent(text, {
-      agentId: job.agentId,
-      sessionKey: job.sessionKey,
-      contextKey: `cron:${job.id}`,
-    });
+    // Followup jobs are "wake-only": they should not inject user-visible system events,
+    // and they should not trigger immediate heartbeat relays (which can cause duplicates).
+    if (!job.followup) {
+      state.deps.enqueueSystemEvent(text, {
+        agentId: job.agentId,
+        sessionKey: job.sessionKey,
+        contextKey: `cron:${job.id}`,
+      });
+    }
     const wakeReason = job.followup ? `followup:${job.id}` : `cron:${job.id}`;
+    if (job.followup) {
+      return { status: "ok" };
+    }
     if (job.wakeMode === "now" && state.deps.runHeartbeatOnce) {
       const reason = wakeReason;
       const delay = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
@@ -553,7 +560,7 @@ async function executeJobCore(
   const summaryText = res.summary?.trim();
   const deliveryPlan = resolveCronDeliveryPlan(job);
   const shouldAnnounceSummary =
-    summaryText && deliveryPlan.requested && !res.delivered && res.heartbeatOnly !== true;
+    !job.followup && summaryText && deliveryPlan.requested && res.heartbeatOnly !== true;
   if (shouldAnnounceSummary) {
     const prefix = "Cron";
     const label =

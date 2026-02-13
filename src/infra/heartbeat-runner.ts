@@ -104,12 +104,6 @@ const EXEC_EVENT_PROMPT =
   "An async command you ran earlier has completed. The result is shown in the system messages above. " +
   "Please relay the command output to the user in a helpful way. If the command succeeded, share the relevant output. " +
   "If it failed, explain what went wrong.";
-// Prompt used when a follow-up polling job fires and should relay pending system events.
-// Followups are not user reminders; keep the language neutral.
-const FOLLOWUP_EVENT_PROMPT =
-  "A scheduled follow-up check has fired. The relevant pending results are shown in the system messages above. " +
-  "Please relay them to the user in a helpful way.";
-
 export { isCronSystemEvent };
 
 
@@ -579,39 +573,36 @@ export async function runHeartbeatOnce(opts: {
     accountId: delivery.accountId,
   }).responsePrefix;
 
-  // Check if this is an exec, followup, or cron event with pending system events.
+  // Check if this is an exec or cron event with pending system events.
+  // Followup wakes are "wake-only" and should not drain/relay system events.
   // If so, use a specialized prompt that instructs the model to relay the result
   // instead of the standard heartbeat prompt with "reply HEARTBEAT_OK".
   const isExecEvent = isExecEventReason;
   const isCronEvent = isCronEventReason;
   const isFollowupEvent = isFollowupEventReason;
 
-  // For event-style heartbeats, consume system events exactly once to avoid duplicate relays
-  // when multiple wake reasons fire (e.g., exec-event + followup/cron).
-  const eventEntries =
-    isExecEvent || isCronEvent || isFollowupEvent ? drainSystemEventEntries(sessionKey) : [];
+  // For event-style heartbeats, consume system events exactly once to avoid duplicate relays.
+  // Followup wakes are "wake-only" and should NOT drain/relay system events.
+  const eventEntries = isExecEvent || isCronEvent ? drainSystemEventEntries(sessionKey) : [];
   const pendingEvents = eventEntries.map((event) => event.text);
 
   const hasExecCompletion = pendingEvents.some(isExecCompletionEvent);
   const cronEvents = isCronEvent ? pendingEvents.filter(isCronSystemEvent) : [];
   const hasCronEvents = cronEvents.length > 0;
-  const hasFollowupEvents = isFollowupEvent && pendingEvents.length > 0;
 
   const prompt = hasExecCompletion
     ? EXEC_EVENT_PROMPT
-    : hasFollowupEvents
-      ? FOLLOWUP_EVENT_PROMPT
-      : hasCronEvents
-        ? buildCronEventPrompt(cronEvents)
-        : resolveHeartbeatPrompt(cfg, heartbeat);
+    : hasCronEvents
+      ? buildCronEventPrompt(cronEvents)
+      : resolveHeartbeatPrompt(cfg, heartbeat);
   const ctx = {
     Body: appendCronStyleCurrentTimeLine(prompt, cfg, startedAt),
     From: sender,
     To: sender,
     Provider: hasExecCompletion
       ? "exec-event"
-      : hasFollowupEvents
-        ? "followup-event"
+      : isFollowupEvent
+        ? "followup-wake"
         : hasCronEvents
           ? "cron-event"
           : "heartbeat",
