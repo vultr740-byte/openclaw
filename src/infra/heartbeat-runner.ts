@@ -106,7 +106,6 @@ const EXEC_EVENT_PROMPT =
   "If it failed, explain what went wrong.";
 export { isCronSystemEvent };
 
-
 type HeartbeatAgentState = {
   agentId: string;
   heartbeat?: HeartbeatConfig;

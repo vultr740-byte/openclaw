@@ -234,7 +234,8 @@ describe("web_search openai defaults", () => {
     vi.stubEnv("OPENAI_API_KEY", "sk-test");
     vi.stubEnv("BRAVE_API_KEY", "brave-test");
     const mockFetch = vi.fn((input: RequestInfo | URL) => {
-      const url = String(input);
+      const url =
+        typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
       if (url.includes("/responses")) {
         return Promise.resolve({
           ok: false,
