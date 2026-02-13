@@ -103,11 +103,7 @@ const CRON_EVENT_PROMPT =
   "A scheduled reminder has been triggered. The reminder message is shown in the system messages above. " +
   "Please relay this reminder to the user in a helpful and friendly way.";
 
-// Prompt used when a follow-up polling job fires and should relay pending system events.
-// Followups are not user reminders; keep the language neutral.
-const FOLLOWUP_EVENT_PROMPT =
-  "A scheduled follow-up check has fired. The relevant pending results are shown in the system messages above. " +
-  "Please relay them to the user in a helpful way.";
+// (followup wake-only): followup reasons no longer use event-style system event draining/relay.
 
 function resolveActiveHoursTimezone(cfg: OpenClawConfig, raw?: string): string {
   const trimmed = raw?.trim();

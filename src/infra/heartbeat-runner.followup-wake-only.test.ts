@@ -21,7 +21,7 @@ describe("heartbeat runner followup wake-only", () => {
     enqueueSystemEvent("one", { sessionKey });
     enqueueSystemEvent("two", { sessionKey });
 
-    const cfg: any = {
+    const cfg = {
       agents: {
         defaults: {
           heartbeat: {
@@ -31,13 +31,19 @@ describe("heartbeat runner followup wake-only", () => {
         },
       },
       channels: {},
-    };
+      session: { scope: "global" },
+    } as const;
 
-    const deps: any = {
+    const deps = {
       deliver: vi.fn(),
-    };
+    } as const;
 
-    await runHeartbeatOnce({ cfg, agentId: "main", reason: "followup:xyz", deps });
+    await runHeartbeatOnce({
+      cfg: cfg as unknown as Parameters<typeof runHeartbeatOnce>[0]["cfg"],
+      agentId: "main",
+      reason: "followup:xyz",
+      deps: deps as unknown as Parameters<typeof runHeartbeatOnce>[0]["deps"],
+    });
 
     // Events should still be present because followup wakes are wake-only.
     expect(peekSystemEvents(sessionKey)).toEqual(["one", "two"]);
