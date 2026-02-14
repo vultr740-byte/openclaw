@@ -1067,6 +1067,7 @@ export async function runEmbeddedAttempt(
         const preCompactionSessionId = activeSession.sessionId;
 
         try {
+          // Don't let compaction waits block abort/timeout handling.
           await abortable(waitForCompactionRetry());
         } catch (err) {
           if (isRunnerAbortError(err)) {
