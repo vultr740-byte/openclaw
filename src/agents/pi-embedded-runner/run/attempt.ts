@@ -830,7 +830,8 @@ export async function runEmbeddedAttempt(
         }
 
         try {
-          await waitForCompactionRetry();
+          // Don't let compaction waits block abort/timeout handling.
+          await abortable(waitForCompactionRetry());
         } catch (err) {
           if (isRunnerAbortError(err)) {
             if (!promptError) {
