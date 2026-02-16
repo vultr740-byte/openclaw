@@ -1,3 +1,4 @@
+import type { ReplyPayload } from "../auto-reply/types.js";
 import type { OpenClawConfig } from "../config/config.js";
 import { loadConfig } from "../config/config.js";
 import { loadSessionStore, resolveStorePath } from "../config/sessions.js";
@@ -146,6 +147,11 @@ function buildRequestMessage(request: ExecApprovalRequest, nowMs: number) {
   return lines.join("\n");
 }
 
+function buildTelegramApprovalButtons(id: string) {
+  const callback = `/approve ${id} allow /elev full`;
+  return [[{ text: "Approve / 通过", callback_data: callback }]];
+}
+
 function decisionLabel(decision: ExecApprovalDecision): string {
   if (decision === "allow-once") {
     return "allowed once";
@@ -200,7 +206,8 @@ function defaultResolveSessionTarget(params: {
 async function deliverToTargets(params: {
   cfg: OpenClawConfig;
   targets: ForwardTarget[];
-  text: string;
+  text?: string;
+  buildPayloads?: (target: ForwardTarget) => ReplyPayload[];
   deliver: typeof deliverOutboundPayloads;
   shouldSend?: () => boolean;
 }) {
@@ -213,13 +220,21 @@ async function deliverToTargets(params: {
       return;
     }
     try {
+      const payloads = params.buildPayloads
+        ? params.buildPayloads(target)
+        : params.text
+          ? [{ text: params.text }]
+          : [];
+      if (payloads.length === 0) {
+        return;
+      }
       await params.deliver({
         cfg: params.cfg,
         channel,
         to: target.to,
         accountId: target.accountId,
         threadId: target.threadId,
-        payloads: [{ text: params.text }],
+        payloads,
       });
     } catch (err) {
       log.error(`exec approvals: failed to deliver to ${channel}:${target.to}: ${String(err)}`);
@@ -305,6 +320,14 @@ export function createExecApprovalForwarder(
       text,
       deliver,
       shouldSend: () => pending.get(request.id) === pendingEntry,
+      buildPayloads: (target) => {
+        const channel = normalizeMessageChannel(target.channel) ?? target.channel;
+        const payload: ReplyPayload = { text };
+        if (channel === "telegram") {
+          payload.channelData = { telegram: { buttons: buildTelegramApprovalButtons(request.id) } };
+        }
+        return [payload];
+      },
     });
   };
 

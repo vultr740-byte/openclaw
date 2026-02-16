@@ -143,4 +143,41 @@ describe("exec approval forwarder", () => {
 
     expect(getFirstDeliveryText(deliver)).toContain("Command:\n````\necho ```danger```\n````");
   });
+
+  it("adds telegram approve + elevate button to approval requests", async () => {
+    vi.useFakeTimers();
+    const deliver = vi.fn().mockResolvedValue([]);
+    const cfg = {
+      approvals: {
+        exec: {
+          enabled: true,
+          mode: "targets",
+          targets: [{ channel: "telegram", to: "123" }],
+        },
+      },
+    } as OpenClawConfig;
+
+    const forwarder = createExecApprovalForwarder({
+      getConfig: () => cfg,
+      deliver,
+      nowMs: () => 1000,
+      resolveSessionTarget: () => null,
+    });
+
+    await forwarder.handleRequested(baseRequest);
+
+    const payloads = (deliver.mock.calls[0]?.[0] as { payloads?: Array<unknown> })?.payloads;
+    const channelData = (payloads?.[0] as { channelData?: unknown })?.channelData as
+      | { telegram?: { buttons?: Array<Array<{ text: string; callback_data: string }>> } }
+      | undefined;
+
+    expect(channelData?.telegram?.buttons).toEqual([
+      [
+        {
+          text: "Approve / 通过",
+          callback_data: `/approve ${baseRequest.id} allow /elev full`,
+        },
+      ],
+    ]);
+  });
 });
