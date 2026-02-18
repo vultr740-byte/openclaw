@@ -525,7 +525,13 @@ async function deliverOutboundPayloadsCore(
         replyToId: effectivePayload.replyToId ?? params.replyToId ?? undefined,
         threadId: params.threadId ?? undefined,
       };
-      if (handler.sendPayload && effectivePayload.channelData) {
+      const hasChannelData = Boolean(effectivePayload.channelData);
+      const hasTelegramButtons = Boolean(
+        (effectivePayload.channelData as any)?.telegram?.buttons &&
+          Array.isArray((effectivePayload.channelData as any)?.telegram?.buttons) &&
+          ((effectivePayload.channelData as any)?.telegram?.buttons?.length ?? 0) > 0,
+      );
+      if (handler.sendPayload && (hasChannelData || (channel === "telegram" && hasTelegramButtons))) {
         const delivery = await handler.sendPayload(effectivePayload, sendOverrides);
         results.push(delivery);
         emitMessageSent({
