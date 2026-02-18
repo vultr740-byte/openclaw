@@ -1,11 +1,11 @@
 import { Type } from "@sinclair/typebox";
-import { formatCliCommand } from "../../cli/command-format.js";
 import type { OpenClawConfig } from "../../config/config.js";
+import type { AnyAgentTool } from "./common.js";
+import { formatCliCommand } from "../../cli/command-format.js";
 import { wrapWebContent } from "../../security/external-content.js";
 import { normalizeSecretInput } from "../../utils/normalize-secret-input.js";
 import { resolveApiKeyForProvider } from "../model-auth.js";
 import { parseModelRef } from "../model-selection.js";
-import type { AnyAgentTool } from "./common.js";
 import { jsonResult, readNumberParam, readStringParam } from "./common.js";
 import {
   CacheEntry,
@@ -724,7 +724,8 @@ async function runOpenAiSearch(params: {
   });
 
   if (!res.ok) {
-    const detail = await readResponseText(res);
+    const detailResult = await readResponseText(res);
+    const detail = detailResult.text;
     const parsed = resolveOpenAiErrorDetail(detail);
     if (
       isOpenAiWebSearchUnsupported({
