@@ -31,6 +31,12 @@
       }
     }
   },
+  "approvals": {
+    "exec": {
+      "enabled": true,
+      "mode": "session"
+    }
+  },
   "channels": {
     "telegram": {
       "enabled": true,
