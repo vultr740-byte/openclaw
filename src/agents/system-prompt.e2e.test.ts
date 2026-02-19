@@ -291,6 +291,8 @@ describe("buildAgentSystemPrompt", () => {
     expect(prompt).toContain(
       "- If exactly one skill clearly applies: read its SKILL.md at <location> with `read`, then follow it.",
     );
+    expect(prompt).toContain("### Skill selection priorities");
+    expect(prompt).toContain("x-twitter-fetch");
   });
 
   it("appends available skills when provided", () => {
