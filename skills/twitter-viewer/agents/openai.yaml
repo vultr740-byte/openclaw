@@ -1,3 +1,0 @@
-interface:
-  display_name: "X/Twitter Viewer"
-  short_description: "Fetch user timelines (paged) and single tweets via twitter-viewer"

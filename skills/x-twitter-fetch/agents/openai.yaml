@@ -1,0 +1,3 @@
+interface:
+  display_name: "X/Twitter Fetch"
+  short_description: "Fetch timelines via twitter-viewer.com and single tweets via FxEmbed"
