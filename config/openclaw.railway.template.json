@@ -12,6 +12,7 @@
       "subagents": {
         "maxConcurrent": 8
       },
+      "elevatedDefault": "full",
       "model": {
         "primary": "openai/${OPENAI_MODEL}"
       }
