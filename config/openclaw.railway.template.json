@@ -30,6 +30,10 @@
       "allowFrom": {
         "telegram": "__TELEGRAM_ALLOW_FROM__"
       }
+    },
+    "exec": {
+      "security": "full",
+      "ask": "off"
     }
   },
   "approvals": {
