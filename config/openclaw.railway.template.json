@@ -19,7 +19,10 @@
     }
   },
   "messages": {
-    "ackReactionScope": "group-mentions"
+    "ackReactionScope": "group-mentions",
+    "inbound": {
+      "debounceMs": 1000
+    }
   },
   "commands": {
     "native": "auto",
