@@ -1,11 +1,12 @@
+import type { OpenClawConfig } from "../../config/config.js";
+import type { ConfiguredEntry } from "./list.types.js";
+import { resolveConfiguredModelKey } from "../../agents/model-config.js";
 import {
   buildModelAliasIndex,
   parseModelRef,
   resolveConfiguredModelRef,
   resolveModelRefFromString,
 } from "../../agents/model-selection.js";
-import type { OpenClawConfig } from "../../config/config.js";
-import type { ConfiguredEntry } from "./list.types.js";
 import { DEFAULT_MODEL, DEFAULT_PROVIDER, modelKey } from "./shared.js";
 
 export function resolveConfiguredEntries(cfg: OpenClawConfig) {
@@ -84,7 +85,8 @@ export function resolveConfiguredEntries(cfg: OpenClawConfig) {
   });
 
   for (const key of Object.keys(cfg.agents?.defaults?.models ?? {})) {
-    const parsed = parseModelRef(String(key ?? ""), DEFAULT_PROVIDER);
+    const resolvedKey = resolveConfiguredModelKey(String(key ?? ""));
+    const parsed = parseModelRef(resolvedKey, DEFAULT_PROVIDER);
     if (!parsed) {
       continue;
     }

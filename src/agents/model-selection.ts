@@ -1,7 +1,8 @@
 import type { OpenClawConfig } from "../config/config.js";
+import type { ModelCatalogEntry } from "./model-catalog.js";
 import { resolveAgentModelPrimary } from "./agent-scope.js";
 import { DEFAULT_MODEL, DEFAULT_PROVIDER } from "./defaults.js";
-import type { ModelCatalogEntry } from "./model-catalog.js";
+import { resolveConfiguredModelKey } from "./model-config.js";
 import { normalizeGoogleModelId } from "./models-config.providers.js";
 
 export type ModelRef = {
@@ -165,7 +166,8 @@ export function buildConfiguredAllowlistKeys(params: {
 
   const keys = new Set<string>();
   for (const raw of rawAllowlist) {
-    const key = resolveAllowlistModelKey(String(raw ?? ""), params.defaultProvider);
+    const resolved = resolveConfiguredModelKey(String(raw ?? ""));
+    const key = resolveAllowlistModelKey(resolved, params.defaultProvider);
     if (key) {
       keys.add(key);
     }
@@ -182,7 +184,8 @@ export function buildModelAliasIndex(params: {
 
   const rawModels = params.cfg.agents?.defaults?.models ?? {};
   for (const [keyRaw, entryRaw] of Object.entries(rawModels)) {
-    const parsed = parseModelRef(String(keyRaw ?? ""), params.defaultProvider);
+    const resolvedKey = resolveConfiguredModelKey(String(keyRaw ?? ""));
+    const parsed = parseModelRef(resolvedKey, params.defaultProvider);
     if (!parsed) {
       continue;
     }
@@ -336,7 +339,8 @@ export function buildAllowedModelSet(params: {
   const allowedKeys = new Set<string>();
   const configuredProviders = (params.cfg.models?.providers ?? {}) as Record<string, unknown>;
   for (const raw of rawAllowlist) {
-    const parsed = parseModelRef(String(raw), params.defaultProvider);
+    const resolvedKey = resolveConfiguredModelKey(String(raw ?? ""));
+    const parsed = parseModelRef(resolvedKey, params.defaultProvider);
     if (!parsed) {
       continue;
     }

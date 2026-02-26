@@ -36,6 +36,7 @@ import { resolveOpenClawDocsPath } from "../../docs-path.js";
 import { isTimeoutError } from "../../failover-error.js";
 import { resolveImageSanitizationLimits } from "../../image-sanitization.js";
 import { resolveModelAuthMode } from "../../model-auth.js";
+import { resolveAgentModelEntry } from "../../model-config.js";
 import { resolveDefaultModelForAgent } from "../../model-selection.js";
 import { createOllamaStreamFn, OLLAMA_NATIVE_BASE_URL } from "../../ollama-stream.js";
 import { createOpenAICompletionsNonStreamingStreamFn } from "../../openai-completions-nonstream.js";
@@ -623,8 +624,11 @@ export async function runEmbeddedAttempt(
         modelApi: params.model.api,
         workspaceDir: params.workspaceDir,
       });
-      const modelKey = `${params.provider}/${params.modelId}`;
-      const modelDefaults = params.config?.agents?.defaults?.models?.[modelKey];
+      const modelDefaults = resolveAgentModelEntry({
+        cfg: params.config,
+        provider: params.provider,
+        modelId: params.modelId,
+      });
       const streamingDisabled = modelDefaults?.streaming === false;
 
       // Ollama native API: bypass SDK's streamSimple and use direct /api/chat calls

@@ -2,6 +2,7 @@ import type { StreamFn } from "@mariozechner/pi-agent-core";
 import type { SimpleStreamOptions } from "@mariozechner/pi-ai";
 import { streamSimple } from "@mariozechner/pi-ai";
 import type { OpenClawConfig } from "../../config/config.js";
+import { resolveAgentModelEntry } from "../model-config.js";
 import { log } from "./logger.js";
 
 const OPENROUTER_APP_HEADERS: Record<string, string> = {
@@ -26,8 +27,11 @@ export function resolveExtraParams(params: {
   provider: string;
   modelId: string;
 }): Record<string, unknown> | undefined {
-  const modelKey = `${params.provider}/${params.modelId}`;
-  const modelConfig = params.cfg?.agents?.defaults?.models?.[modelKey];
+  const modelConfig = resolveAgentModelEntry({
+    cfg: params.cfg,
+    provider: params.provider,
+    modelId: params.modelId,
+  });
   return modelConfig?.params ? { ...modelConfig.params } : undefined;
 }
 
