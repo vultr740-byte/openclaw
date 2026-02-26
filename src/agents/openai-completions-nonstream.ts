@@ -450,23 +450,23 @@ export function createOpenAICompletionsNonStreamingStreamFn(): StreamFn {
             `Non-streaming fallback only supports openai-completions (got ${model.api})`,
           );
         }
-
-        const compat = resolveOpenAICompat(model);
-        const apiKey = options?.apiKey || getEnvApiKey(model.provider);
+        const openaiModel = model as Model<"openai-completions">;
+        const compat = resolveOpenAICompat(openaiModel);
+        const apiKey = options?.apiKey || getEnvApiKey(openaiModel.provider);
         if (!apiKey) {
-          throw new Error(`No API key for provider: ${model.provider}`);
+          throw new Error(`No API key for provider: ${openaiModel.provider}`);
         }
 
         const requestOptions = options as OpenAICompatStreamOptions | undefined;
-        const params = buildRequestParams(model, context, requestOptions, compat);
+        const params = buildRequestParams(openaiModel, context, requestOptions, compat);
         requestOptions?.onPayload?.(params);
 
         const headers: Record<string, string> = {
           "Content-Type": "application/json",
-          ...model.headers,
+          ...openaiModel.headers,
         };
 
-        if (model.provider === "github-copilot") {
+        if (openaiModel.provider === "github-copilot") {
           const messages = context.messages || [];
           const lastMessage = messages[messages.length - 1];
           const isAgentCall = lastMessage ? lastMessage.role !== "user" : false;
@@ -493,7 +493,7 @@ export function createOpenAICompletionsNonStreamingStreamFn(): StreamFn {
           headers.Authorization = `Bearer ${apiKey}`;
         }
 
-        const response = await fetch(resolveChatCompletionsUrl(model.baseUrl), {
+        const response = await fetch(resolveChatCompletionsUrl(openaiModel.baseUrl), {
           method: "POST",
           headers,
           body: JSON.stringify(params),
@@ -514,8 +514,8 @@ export function createOpenAICompletionsNonStreamingStreamFn(): StreamFn {
           throw new Error("OpenAI-compatible API returned no choices");
         }
 
-        const usage = calculateUsage(model, data.usage);
-        const message = buildAssistantMessage(model, choice, usage);
+        const usage = calculateUsage(openaiModel, data.usage);
+        const message = buildAssistantMessage(openaiModel, choice, usage);
         if (message.stopReason === "error" || message.stopReason === "aborted") {
           if (!message.errorMessage && choice.finish_reason === "content_filter") {
             message.errorMessage = "OpenAI-compatible API blocked the response (content_filter).";
