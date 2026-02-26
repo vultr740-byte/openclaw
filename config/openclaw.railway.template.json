@@ -77,6 +77,17 @@
             "name": "${OPENAI_MODEL}"
           }
         ]
+      },
+      "xai": {
+        "baseUrl": "${XAI_BASE_URL}",
+        "apiKey": "${XAI_API_KEY}",
+        "api": "openai-completions",
+        "models": [
+          {
+            "id": "${XAI_MODEL}",
+            "name": "${XAI_MODEL}"
+          }
+        ]
       }
     }
   }
