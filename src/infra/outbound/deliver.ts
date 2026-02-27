@@ -116,6 +116,18 @@ type ChannelHandlerParams = {
   mediaLocalRoots?: readonly string[];
 };
 
+function hasTelegramButtonsInChannelData(channelData?: Record<string, unknown>): boolean {
+  if (!channelData) {
+    return false;
+  }
+  const telegram = channelData.telegram;
+  if (!telegram || typeof telegram !== "object") {
+    return false;
+  }
+  const buttons = (telegram as { buttons?: unknown }).buttons;
+  return Array.isArray(buttons) && buttons.length > 0;
+}
+
 // Channel docking: outbound delivery delegates to plugin.outbound adapters.
 async function createChannelHandler(params: ChannelHandlerParams): Promise<ChannelHandler> {
   const outbound = await loadChannelOutboundAdapter(params.channel);
@@ -216,6 +228,8 @@ type DeliverOutboundPayloadsCoreParams = {
     mediaUrls?: string[];
   };
   silent?: boolean;
+  /** Session key for internal hook dispatch (when `mirror` is not needed). */
+  sessionKey?: string;
 };
 
 type DeliverOutboundPayloadsParams = DeliverOutboundPayloadsCoreParams & {
@@ -444,7 +458,7 @@ async function deliverOutboundPayloadsCore(
     return normalized ? [normalized] : [];
   });
   const hookRunner = getGlobalHookRunner();
-  const sessionKeyForInternalHooks = params.mirror?.sessionKey;
+  const sessionKeyForInternalHooks = params.mirror?.sessionKey ?? params.sessionKey;
   for (const payload of normalizedPayloads) {
     const payloadSummary: NormalizedOutboundPayload = {
       text: payload.text ?? "",
@@ -526,12 +540,11 @@ async function deliverOutboundPayloadsCore(
         threadId: params.threadId ?? undefined,
       };
       const hasChannelData = Boolean(effectivePayload.channelData);
-      const hasTelegramButtons = Boolean(
-        (effectivePayload.channelData as any)?.telegram?.buttons &&
-          Array.isArray((effectivePayload.channelData as any)?.telegram?.buttons) &&
-          ((effectivePayload.channelData as any)?.telegram?.buttons?.length ?? 0) > 0,
-      );
-      if (handler.sendPayload && (hasChannelData || (channel === "telegram" && hasTelegramButtons))) {
+      const hasTelegramButtons = hasTelegramButtonsInChannelData(effectivePayload.channelData);
+      if (
+        handler.sendPayload &&
+        (hasChannelData || (channel === "telegram" && hasTelegramButtons))
+      ) {
         const delivery = await handler.sendPayload(effectivePayload, sendOverrides);
         results.push(delivery);
         emitMessageSent({

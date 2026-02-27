@@ -1,5 +1,5 @@
-import type { CronDeliveryMode, CronJob, CronMessageChannel } from "./types.js";
 import { normalizeAccountId } from "../utils/account-id.js";
+import type { CronDeliveryMode, CronJob, CronMessageChannel } from "./types.js";
 
 export type CronDeliveryPlan = {
   mode: CronDeliveryMode;
@@ -64,8 +64,12 @@ export function resolveCronDeliveryPlan(job: CronJob): CronDeliveryPlan {
     (delivery as { channel?: unknown } | undefined)?.channel,
   );
   const deliveryTo = normalizeTo((delivery as { to?: unknown } | undefined)?.to);
-  const deliveryAccountId = normalizeAccountId(delivery?.accountId);
-  const deliveryThreadId = normalizeThreadId(delivery?.threadId);
+  const deliveryAccountId = normalizeAccountId(
+    normalizeTo((delivery as { accountId?: unknown } | undefined)?.accountId),
+  );
+  const deliveryThreadId = normalizeThreadId(
+    (delivery as { threadId?: unknown } | undefined)?.threadId,
+  );
 
   const channel = deliveryChannel ?? payloadChannel ?? "last";
   const to = deliveryTo ?? payloadTo;

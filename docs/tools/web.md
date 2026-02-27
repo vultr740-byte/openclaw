@@ -1,10 +1,11 @@
 ---
-summary: "Web search + fetch tools (OpenAI, Brave, Perplexity, Grok)"
+summary: "Web search + fetch tools (OpenAI, Brave, Perplexity, Grok, Gemini, Kimi)"
 read_when:
   - You want to enable web_search or web_fetch
   - You want to use OpenAI web_search
   - You need Brave Search API key setup
   - You want to use Perplexity Sonar for web search
+  - You want to use Gemini with Google Search grounding
 title: "Web Tools"
 ---
 
@@ -12,7 +13,7 @@ title: "Web Tools"
 
 OpenClaw ships two lightweight web tools:
 
-- `web_search` — Search the web via OpenAI web_search (preferred when OPENAI_API_KEY is set), Brave Search API, Perplexity Sonar (direct or via OpenRouter), or xAI Grok.
+- `web_search` — Search the web via OpenAI web_search (preferred when OPENAI_API_KEY is set), Brave Search API, Perplexity Sonar (direct or via OpenRouter), xAI Grok, Gemini with Google Search grounding, or Kimi (Moonshot).
 - `web_fetch` — HTTP fetch + readable extraction (HTML → markdown/text).
 
 These are **not** browser automation. For JS-heavy sites or logins, use the
@@ -25,6 +26,8 @@ These are **not** browser automation. For JS-heavy sites or logins, use the
   - **Brave**: returns structured results (title, URL, snippet).
   - **Perplexity**: returns AI-synthesized answers with citations from real-time web search.
   - **Grok**: returns AI-synthesized answers with citations from real-time web search.
+  - **Gemini**: returns AI-synthesized answers grounded in Google Search with citations.
+  - **Kimi**: returns AI-synthesized answers with citations from native $web_search.
 - Results are cached by query for 15 minutes (configurable).
 - `web_fetch` does a plain HTTP GET and extracts readable content
   (HTML → markdown/text). It does **not** execute JavaScript.
@@ -32,16 +35,33 @@ These are **not** browser automation. For JS-heavy sites or logins, use the
 
 ## Choosing a search provider
 
-| Provider       | Pros                                          | Cons                                     | API Key                                      |
-| -------------- | --------------------------------------------- | ---------------------------------------- | -------------------------------------------- |
-| **OpenAI**     | Built-in web_search, easy to reuse OpenAI key | Requires OpenAI API access               | `OPENAI_API_KEY`                             |
-| **Brave**      | Fast, structured results, free tier           | Traditional search results               | `BRAVE_API_KEY`                              |
-| **Perplexity** | AI-synthesized answers, citations, real-time  | Requires Perplexity or OpenRouter access | `OPENROUTER_API_KEY` or `PERPLEXITY_API_KEY` |
-| **Grok**       | AI-synthesized answers, citations, real-time  | Requires xAI access                      | `XAI_API_KEY`                                |
+| Provider            | Pros                                          | Cons                                     | API Key                                      |
+| ------------------- | --------------------------------------------- | ---------------------------------------- | -------------------------------------------- |
+| **OpenAI**          | Built-in web_search, easy to reuse OpenAI key | Requires OpenAI API access               | `OPENAI_API_KEY`                             |
+| **Brave** (default) | Fast, structured results, free tier           | Traditional search results               | `BRAVE_API_KEY`                              |
+| **Perplexity**      | AI-synthesized answers, citations, real-time  | Requires Perplexity or OpenRouter access | `OPENROUTER_API_KEY` or `PERPLEXITY_API_KEY` |
+| **Grok**            | AI-synthesized answers, citations, real-time  | Requires xAI access                      | `XAI_API_KEY`                                |
+| **Gemini**          | Google Search grounding, AI-synthesized       | Requires Gemini API key                  | `GEMINI_API_KEY`                             |
+| **Kimi**            | Native $web_search with citations             | Requires Moonshot API access             | `KIMI_API_KEY` or `MOONSHOT_API_KEY`         |
 
-If OpenAI web_search is selected but the endpoint does not support it, OpenClaw falls back to the next available provider (Brave, Perplexity, or Grok) when their keys are configured.
+If OpenAI web_search is selected but the endpoint does not support it, OpenClaw falls back to the next available provider (Brave, Gemini, Kimi, Perplexity, or Grok) when their keys are configured.
 
 See [Brave Search setup](/brave-search) and [Perplexity Sonar](/perplexity) for provider-specific details. OpenAI web_search reuses your OpenAI API key (and optional base URL).
+
+### Auto-detection
+
+If no `provider` is explicitly set, OpenClaw auto-detects which provider to use based on available API keys, checking in this order:
+
+1. **OpenAI** — `OPENAI_API_KEY`, `models.providers.openai.apiKey`, or `tools.web.search.openai.apiKey`
+2. **Brave** — `BRAVE_API_KEY` env var or `tools.web.search.apiKey` config
+3. **Gemini** — `GEMINI_API_KEY` env var or `tools.web.search.gemini.apiKey` config
+4. **Kimi** — `KIMI_API_KEY` / `MOONSHOT_API_KEY` env var or `tools.web.search.kimi.apiKey` config
+5. **Perplexity** — `PERPLEXITY_API_KEY` / `OPENROUTER_API_KEY` env var or `tools.web.search.perplexity.apiKey` config
+6. **Grok** — `XAI_API_KEY` env var or `tools.web.search.grok.apiKey` config
+
+If no keys are found, it falls back to Brave (you'll get a missing-key error prompting you to configure one).
+
+### Explicit provider
 
 Set the provider in config:
 
@@ -50,7 +70,7 @@ Set the provider in config:
   tools: {
     web: {
       search: {
-        provider: "openai", // or "brave", "perplexity", "grok"
+        provider: "openai", // or "brave", "perplexity", "grok", "gemini", "kimi"
       },
     },
   },
@@ -165,6 +185,78 @@ If no base URL is set, OpenClaw chooses a default based on the API key source:
 | `perplexity/sonar-pro` (default) | Multi-step reasoning with web search | Complex questions |
 | `perplexity/sonar-reasoning-pro` | Chain-of-thought analysis            | Deep research     |
 
+## Using Gemini (Google Search grounding)
+
+Gemini models support built-in [Google Search grounding](https://ai.google.dev/gemini-api/docs/grounding),
+which returns AI-synthesized answers backed by live Google Search results with citations.
+
+### Getting a Gemini API key
+
+1. Go to [Google AI Studio](https://aistudio.google.com/apikey)
+2. Create an API key
+3. Set `GEMINI_API_KEY` in the Gateway environment, or configure `tools.web.search.gemini.apiKey`
+
+### Setting up Gemini search
+
+```json5
+{
+  tools: {
+    web: {
+      search: {
+        provider: "gemini",
+        gemini: {
+          // API key (optional if GEMINI_API_KEY is set)
+          apiKey: "AIza...",
+          // Model (defaults to "gemini-2.5-flash")
+          model: "gemini-2.5-flash",
+        },
+      },
+    },
+  },
+}
+```
+
+**Environment alternative:** set `GEMINI_API_KEY` in the Gateway environment.
+For a gateway install, put it in `~/.openclaw/.env`.
+
+### Notes
+
+- Citation URLs from Gemini grounding are automatically resolved from Google's
+  redirect URLs to direct URLs.
+- Redirect resolution uses the SSRF guard path (HEAD + redirect checks + http/https validation) before returning the final citation URL.
+- This redirect resolver follows the trusted-network model (private/internal networks allowed by default) to match Gateway operator trust assumptions.
+- The default model (`gemini-2.5-flash`) is fast and cost-effective.
+  Any Gemini model that supports grounding can be used.
+
+## Using Kimi (Moonshot)
+
+Kimi exposes a native $web_search tool and returns citations from its search results.
+
+### Setting up Kimi search
+
+```json5
+{
+  tools: {
+    web: {
+      search: {
+        provider: "kimi",
+        kimi: {
+          // API key (optional if KIMI_API_KEY or MOONSHOT_API_KEY is set)
+          apiKey: "moonshot-...",
+          // Base URL (defaults to "https://api.moonshot.ai/v1")
+          baseUrl: "https://api.moonshot.ai/v1",
+          // Model (defaults to "moonshot-v1-128k")
+          model: "moonshot-v1-128k",
+        },
+      },
+    },
+  },
+}
+```
+
+**Environment alternative:** set `KIMI_API_KEY` or `MOONSHOT_API_KEY` in the Gateway environment.
+For a gateway install, put it in `~/.openclaw/.env`.
+
 ## web_search
 
 Search the web using your configured provider.
@@ -177,6 +269,8 @@ Search the web using your configured provider.
   - **Brave**: `BRAVE_API_KEY` or `tools.web.search.apiKey`
   - **Perplexity**: `OPENROUTER_API_KEY`, `PERPLEXITY_API_KEY`, or `tools.web.search.perplexity.apiKey`
   - **Grok**: `XAI_API_KEY` or `tools.web.search.grok.apiKey`
+  - **Gemini**: `GEMINI_API_KEY` or `tools.web.search.gemini.apiKey`
+  - **Kimi**: `KIMI_API_KEY`, `MOONSHOT_API_KEY`, or `tools.web.search.kimi.apiKey`
 
 ### Config
 

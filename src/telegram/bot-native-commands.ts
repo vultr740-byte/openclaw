@@ -18,7 +18,11 @@ import { createReplyPrefixOptions } from "../channels/reply-prefix.js";
 import type { OpenClawConfig } from "../config/config.js";
 import type { ChannelGroupPolicy } from "../config/group-policy.js";
 import { resolveMarkdownTableMode } from "../config/markdown-tables.js";
-import { loadSessionStore, resolveStorePath } from "../config/sessions.js";
+import {
+  loadSessionStore,
+  recordSessionMetaFromInbound,
+  resolveStorePath,
+} from "../config/sessions.js";
 import {
   normalizeTelegramCommandName,
   resolveTelegramCustomCommands,
@@ -42,7 +46,7 @@ import { resolveAgentRoute } from "../routing/resolve-route.js";
 import { resolveThreadSessionKeys } from "../routing/session-key.js";
 import type { RuntimeEnv } from "../runtime.js";
 import { withTelegramApiErrorLogging } from "./api-logging.js";
-import { firstDefined, isSenderAllowed, normalizeAllowFromWithStore } from "./bot-access.js";
+import { isSenderAllowed, normalizeDmAllowFromWithStore } from "./bot-access.js";
 import {
   buildCappedTelegramMenuCommands,
   buildPluginTelegramMenuCommands,
@@ -65,6 +69,7 @@ import {
   evaluateTelegramGroupBaseAccess,
   evaluateTelegramGroupPolicyAccess,
 } from "./group-access.js";
+import { resolveTelegramGroupPromptSettings } from "./group-config-helpers.js";
 import { buildInlineKeyboard } from "./send.js";
 
 const EMPTY_RESPONSE_FALLBACK = "No response generated. Please try again.";
@@ -91,6 +96,7 @@ export type RegisterTelegramHandlerParams = {
   opts: TelegramBotOptions;
   runtime: RuntimeEnv;
   telegramCfg: TelegramAccountConfig;
+  allowFrom?: Array<string | number>;
   groupAllowFrom?: Array<string | number>;
   resolveGroupPolicy: (chatId: string | number) => ChannelGroupPolicy;
   resolveTelegramGroupConfig: (
@@ -250,9 +256,10 @@ async function resolveTelegramCommandAuth(params: {
     }
   }
 
-  const dmAllow = normalizeAllowFromWithStore({
+  const dmAllow = normalizeDmAllowFromWithStore({
     allowFrom: allowFrom,
     storeAllowFrom,
+    dmPolicy: telegramCfg.dmPolicy ?? "pairing",
   });
   const senderAllowed = isSenderAllowed({
     allow: dmAllow,
@@ -572,13 +579,10 @@ export const registerTelegramNativeCommands = ({
             });
             return;
           }
-          const skillFilter = firstDefined(topicConfig?.skills, groupConfig?.skills);
-          const systemPromptParts = [
-            groupConfig?.systemPrompt?.trim() || null,
-            topicConfig?.systemPrompt?.trim() || null,
-          ].filter((entry): entry is string => Boolean(entry));
-          const groupSystemPrompt =
-            systemPromptParts.length > 0 ? systemPromptParts.join("\n\n") : undefined;
+          const { skillFilter, groupSystemPrompt } = resolveTelegramGroupPromptSettings({
+            groupConfig,
+            topicConfig,
+          });
           const conversationLabel = isGroup
             ? msg.chat.title
               ? `${msg.chat.title} id:${chatId}`
@@ -600,6 +604,7 @@ export const registerTelegramNativeCommands = ({
             SenderId: senderId || undefined,
             SenderUsername: senderUsername || undefined,
             Surface: "telegram",
+            Provider: "telegram",
             MessageSid: String(msg.message_id),
             Timestamp: msg.date ? msg.date * 1000 : undefined,
             WasMentioned: true,
@@ -614,6 +619,19 @@ export const registerTelegramNativeCommands = ({
             OriginatingChannel: "telegram" as const,
             OriginatingTo: `telegram:${chatId}`,
           });
+
+          const storePath = resolveStorePath(cfg.session?.store, {
+            agentId: route.agentId,
+          });
+          try {
+            await recordSessionMetaFromInbound({
+              storePath,
+              sessionKey: ctxPayload.SessionKey ?? route.sessionKey,
+              ctx: ctxPayload,
+            });
+          } catch (err) {
+            runtime.error?.(danger(`telegram slash: failed updating session meta: ${String(err)}`));
+          }
 
           const disableBlockStreaming =
             typeof telegramCfg.blockStreaming === "boolean"
