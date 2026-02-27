@@ -50,6 +50,11 @@
       "mode": "session"
     }
   },
+  "gateway": {
+    "controlUi": {
+      "dangerouslyAllowHostHeaderOriginFallback": true
+    }
+  },
   "channels": {
     "telegram": {
       "enabled": true,
