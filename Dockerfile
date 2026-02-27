@@ -59,11 +59,11 @@ ENV OPENCLAW_RUN_AS_ROOT=1
 
 # Allow non-root user to write temp files during runtime/tests.
 # Create /data so containerized defaults can write state/workspace without root.
+USER root
 RUN mkdir -p /data && chown -R node:node /app /data
 
 # Security hardening: drop to non-root for the runtime process.
 # Entry point keeps root only long enough to fix /data ownership.
-USER root
 ENTRYPOINT ["/usr/local/bin/openclaw-entrypoint"]
 
 # Start gateway server with default config.
