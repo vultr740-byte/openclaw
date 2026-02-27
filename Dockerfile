@@ -53,6 +53,11 @@ RUN pnpm build
 ENV OPENCLAW_PREFER_PNPM=1
 RUN pnpm ui:build
 
+# Expose the CLI binary without requiring npm global writes as non-root.
+USER root
+RUN ln -sf /app/openclaw.mjs /usr/local/bin/openclaw \
+ && chmod 755 /app/openclaw.mjs
+
 ENV NODE_ENV=production
 # Allow running the gateway as root when required by the host environment.
 ENV OPENCLAW_RUN_AS_ROOT=1
