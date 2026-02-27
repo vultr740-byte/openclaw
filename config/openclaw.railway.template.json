@@ -51,6 +51,10 @@
     }
   },
   "gateway": {
+    "bind": "loopback",
+    "auth": {
+      "mode": "none"
+    },
     "controlUi": {
       "dangerouslyAllowHostHeaderOriginFallback": true
     }
