@@ -51,12 +51,13 @@
     }
   },
   "gateway": {
-    "bind": "loopback",
+    "bind": "lan",
     "auth": {
-      "mode": "none"
+      "mode": "token",
+      "token": "${OPENCLAW_GATEWAY_TOKEN}"
     },
     "controlUi": {
-      "dangerouslyAllowHostHeaderOriginFallback": true
+      "enabled": false
     }
   },
   "channels": {
