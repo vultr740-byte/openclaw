@@ -49,9 +49,16 @@ RUN if [ -n "$OPENCLAW_INSTALL_BROWSER" ]; then \
 USER node
 COPY --chown=node:node . .
 RUN pnpm build
+# Optionally skip Control UI assets in Docker builds.
+# Default to skipping; set OPENCLAW_BUILD_UI=1 to include Control UI assets.
+ARG OPENCLAW_BUILD_UI="0"
 # Force pnpm for UI build (Bun may fail on ARM/Synology architectures)
 ENV OPENCLAW_PREFER_PNPM=1
-RUN pnpm ui:build
+RUN if [ "$OPENCLAW_BUILD_UI" = "1" ]; then \
+      pnpm ui:build; \
+    else \
+      echo "Skipping Control UI build (OPENCLAW_BUILD_UI=$OPENCLAW_BUILD_UI)"; \
+    fi
 
 # Expose the CLI binary without requiring npm global writes as non-root.
 USER root
