@@ -256,10 +256,13 @@ DELIVERY (top-level):
   - If the task needs to send to a specific chat/recipient, set announce delivery.channel/to; do not call messaging tools inside the run.
 
 CRITICAL CONSTRAINTS:
-- sessionTarget="main" REQUIRES payload.kind="systemEvent"
-- sessionTarget="isolated" REQUIRES payload.kind="agentTurn"
-- For webhook callbacks, use delivery.mode="webhook" with delivery.to set to a URL.
 Default: prefer isolated agentTurn jobs unless the user explicitly wants a main-session system event.
+- sessionTarget="isolated" REQUIRES payload.kind="agentTurn"
+- sessionTarget="main" REQUIRES payload.kind="systemEvent"
+- Need main-session reminder? Use sessionTarget="main" + systemEvent and no channel delivery.
+- Need Telegram/Slack/Discord post? Use sessionTarget="isolated" + agentTurn + delivery.mode="announce" (+ channel/to).
+- delivery.mode="announce" (or any channel/to chat delivery) is ONLY valid with sessionTarget="isolated" + payload.kind="agentTurn". INVALID: main + announce.
+- For webhook callbacks, use delivery.mode="webhook" with delivery.to set to a URL.
 
 WAKE MODES (for wake action):
 - "next-heartbeat" (default): Wake on next heartbeat
