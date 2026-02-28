@@ -92,6 +92,10 @@ const raw =
   process.env.TELEGRAM_ALLOW_FROM?.trim() ||
   "";
 const rawSessionDmScope = process.env.OPENCLAW_SESSION_DM_SCOPE?.trim() || "";
+const rawXaiBaseUrl = process.env.XAI_BASE_URL?.trim() || "";
+const rawXaiApiKey = process.env.XAI_API_KEY?.trim() || "";
+const rawXaiModel = process.env.XAI_MODEL?.trim() || "";
+const xaiConfigured = Boolean(rawXaiBaseUrl && rawXaiApiKey && rawXaiModel);
 
 let allowFrom = [];
 if (raw) {
@@ -136,6 +140,78 @@ if (rawSessionDmScope) {
       `openclaw-entrypoint: failed to set session.dmScope from OPENCLAW_SESSION_DM_SCOPE: ${err}`,
     );
   }
+}
+
+try {
+  const parsed = JSON.parse(output);
+  if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+    const root = parsed;
+    const nextModels =
+      root.models && typeof root.models === "object" && !Array.isArray(root.models)
+        ? root.models
+        : {};
+    const nextProviders =
+      nextModels.providers &&
+      typeof nextModels.providers === "object" &&
+      !Array.isArray(nextModels.providers)
+        ? nextModels.providers
+        : {};
+
+    const nextAgents =
+      root.agents && typeof root.agents === "object" && !Array.isArray(root.agents)
+        ? root.agents
+        : {};
+    const nextDefaults =
+      nextAgents.defaults &&
+      typeof nextAgents.defaults === "object" &&
+      !Array.isArray(nextAgents.defaults)
+        ? nextAgents.defaults
+        : {};
+    const nextAgentModels =
+      nextDefaults.models &&
+      typeof nextDefaults.models === "object" &&
+      !Array.isArray(nextDefaults.models)
+        ? nextDefaults.models
+        : {};
+
+    if (!xaiConfigured) {
+      delete nextProviders.xai;
+      for (const key of Object.keys(nextAgentModels)) {
+        if (key.startsWith("xai/")) {
+          delete nextAgentModels[key];
+        }
+      }
+    } else {
+      nextProviders.xai = {
+        baseUrl: "${XAI_BASE_URL}",
+        apiKey: "${XAI_API_KEY}",
+        api: "openai-completions",
+        models: [
+          {
+            id: "${XAI_MODEL}",
+            name: "${XAI_MODEL}",
+          },
+        ],
+      };
+      const xaiModelKey = "xai/${XAI_MODEL}";
+      const existingXaiModel = nextAgentModels[xaiModelKey];
+      nextAgentModels[xaiModelKey] =
+        existingXaiModel &&
+        typeof existingXaiModel === "object" &&
+        !Array.isArray(existingXaiModel)
+          ? { ...existingXaiModel, streaming: false }
+          : { streaming: false };
+    }
+
+    nextDefaults.models = nextAgentModels;
+    nextAgents.defaults = nextDefaults;
+    root.agents = nextAgents;
+    nextModels.providers = nextProviders;
+    root.models = nextModels;
+    output = JSON.stringify(root, null, 2);
+  }
+} catch (err) {
+  console.error(`openclaw-entrypoint: failed to normalize optional XAI config: ${err}`);
 }
 
 if (output !== source) {
