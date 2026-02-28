@@ -91,6 +91,7 @@ const raw =
   process.env.TELEGRAM_ALLOW_FROM_JSON?.trim() ||
   process.env.TELEGRAM_ALLOW_FROM?.trim() ||
   "";
+const rawSessionDmScope = process.env.OPENCLAW_SESSION_DM_SCOPE?.trim() || "";
 
 let allowFrom = [];
 if (raw) {
@@ -116,7 +117,27 @@ if (raw) {
 
 const replacement = JSON.stringify(allowFrom.map((entry) => String(entry).trim()).filter(Boolean));
 const source = fs.readFileSync(configPath, "utf8");
-const output = source.replace(/\"__TELEGRAM_ALLOW_FROM__\"/g, replacement);
+let output = source.replace(/\"__TELEGRAM_ALLOW_FROM__\"/g, replacement);
+
+if (rawSessionDmScope) {
+  try {
+    const parsed = JSON.parse(output);
+    const session =
+      parsed && typeof parsed === "object" && !Array.isArray(parsed)
+        ? (parsed.session ?? {})
+        : {};
+    if (typeof session !== "object" || Array.isArray(session)) {
+      parsed.session = {};
+    }
+    parsed.session.dmScope = rawSessionDmScope;
+    output = JSON.stringify(parsed, null, 2);
+  } catch (err) {
+    console.error(
+      `openclaw-entrypoint: failed to set session.dmScope from OPENCLAW_SESSION_DM_SCOPE: ${err}`,
+    );
+  }
+}
+
 if (output !== source) {
   fs.writeFileSync(configPath, output);
 }
