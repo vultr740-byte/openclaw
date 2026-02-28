@@ -262,6 +262,8 @@ Default: prefer isolated agentTurn jobs unless the user explicitly wants a main-
 - Need main-session reminder? Use sessionTarget="main" + systemEvent and no channel delivery.
 - Need Telegram/Slack/Discord post? Use sessionTarget="isolated" + agentTurn + delivery.mode="announce" (+ channel/to).
 - delivery.mode="announce" (or any channel/to chat delivery) is ONLY valid with sessionTarget="isolated" + payload.kind="agentTurn". INVALID: main + announce.
+- Use exactly ONE chat delivery path per run: EITHER cron delivery.mode="announce" OR task-run messaging tool calls, never both for the same recipient/content.
+- If delivery.mode="announce" is used, do not ask the task to send or forward the same message again; if the task must send directly, set delivery.mode="none".
 - For webhook callbacks, use delivery.mode="webhook" with delivery.to set to a URL.
 
 WAKE MODES (for wake action):
