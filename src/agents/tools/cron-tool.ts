@@ -253,7 +253,8 @@ DELIVERY (top-level):
   - Default for isolated agentTurn jobs (when delivery omitted): "announce"
   - announce: send to chat channel (optional channel/to target)
   - webhook: send finished-run event as HTTP POST to delivery.to (URL required)
-  - If the task needs to send to a specific chat/recipient, set announce delivery.channel/to; do not call messaging tools inside the run.
+  - For cron-managed chat delivery, use delivery.mode="announce" with delivery.channel/to and do not call messaging tools inside the run.
+  - For task-managed direct send, use delivery.mode="none" and ALWAYS pass explicit message tool target fields (channel + to/target); never rely on inferred targets.
 
 CRITICAL CONSTRAINTS:
 Default: prefer isolated agentTurn jobs unless the user explicitly wants a main-session system event.
@@ -261,7 +262,7 @@ Default: prefer isolated agentTurn jobs unless the user explicitly wants a main-
 - sessionTarget="main" REQUIRES payload.kind="systemEvent"
 - Need main-session reminder? Use sessionTarget="main" + systemEvent and no channel delivery.
 - Need Telegram/Slack/Discord post? Use sessionTarget="isolated" + agentTurn + delivery.mode="announce" (+ channel/to).
-- If the user asks to "send to me/myself", prefer a private/direct (DM) target first (ask/set explicit delivery.to if DM target is unclear), use group/channel only when explicitly requested, and choose ONE delivery path: either delivery.mode="announce" with no messaging-tool sends, or delivery.mode="none" when the task must send directly.
+- If the user asks to "send to me/myself", prefer a private/direct (DM) target first (ask/set explicit delivery.to if DM target is unclear), use group/channel only when explicitly requested, and choose ONE delivery path: either delivery.mode="announce" with no messaging-tool sends, or delivery.mode="none" with explicit message tool channel + to/target.
 - delivery.mode="announce" (or any channel/to chat delivery) is ONLY valid with sessionTarget="isolated" + payload.kind="agentTurn". INVALID: main + announce.
 - For webhook callbacks, use delivery.mode="webhook" with delivery.to set to a URL.
 
