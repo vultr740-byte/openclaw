@@ -153,6 +153,32 @@ describe("server-channels auto restart", () => {
     expect(startAccount).toHaveBeenCalledTimes(1);
   });
 
+  it("supports legacy startAccount results that return a stop handle", async () => {
+    const stop = vi.fn();
+    const startAccount = vi.fn(async () => ({ stop }));
+    installTestRegistry(
+      createTestPlugin({
+        startAccount,
+      }),
+    );
+    const manager = createManager();
+
+    await manager.startChannels();
+    await vi.advanceTimersByTimeAsync(200);
+
+    expect(startAccount).toHaveBeenCalledTimes(1);
+    const runningSnapshot = manager.getRuntimeSnapshot();
+    expect(runningSnapshot.channelAccounts.discord?.[DEFAULT_ACCOUNT_ID]?.running).toBe(true);
+
+    await manager.stopChannel("discord", DEFAULT_ACCOUNT_ID);
+    expect(stop).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(200);
+    expect(startAccount).toHaveBeenCalledTimes(1);
+    const stoppedSnapshot = manager.getRuntimeSnapshot();
+    expect(stoppedSnapshot.channelAccounts.discord?.[DEFAULT_ACCOUNT_ID]?.running).toBe(false);
+  });
+
   it("marks enabled/configured when account descriptors omit them", () => {
     installTestRegistry(
       createTestPlugin({

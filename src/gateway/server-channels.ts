@@ -30,6 +30,10 @@ type ChannelRuntimeStore = {
   runtimes: Map<string, ChannelAccountSnapshot>;
 };
 
+type LegacyChannelStartResult = {
+  stop?: (() => void | Promise<void>) | undefined;
+};
+
 function createRuntimeStore(): ChannelRuntimeStore {
   return {
     aborts: new Map(),
@@ -53,6 +57,22 @@ function resolveDefaultRuntime(channelId: ChannelId): ChannelAccountSnapshot {
 
 function cloneDefaultRuntime(channelId: ChannelId, accountId: string): ChannelAccountSnapshot {
   return { ...resolveDefaultRuntime(channelId), accountId };
+}
+
+function waitForAbort(signal: AbortSignal): Promise<void> {
+  if (signal.aborted) {
+    return Promise.resolve();
+  }
+  return new Promise((resolve) => {
+    signal.addEventListener("abort", () => resolve(), { once: true });
+  });
+}
+
+function isLegacyChannelStartResult(value: unknown): value is LegacyChannelStartResult {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  return "stop" in value;
 }
 
 type ChannelManagerOptions = {
@@ -190,16 +210,24 @@ export function createChannelManager(opts: ChannelManagerOptions): ChannelManage
         });
 
         const log = channelLogs[channelId];
-        const task = startAccount({
-          cfg,
-          accountId: id,
-          account,
-          runtime: channelRuntimeEnvs[channelId],
-          abortSignal: abort.signal,
-          log,
-          getStatus: () => getRuntime(channelId, id),
-          setStatus: (next) => setRuntime(channelId, id, next),
-        });
+        const task = (async () => {
+          const startResult = await startAccount({
+            cfg,
+            accountId: id,
+            account,
+            runtime: channelRuntimeEnvs[channelId],
+            abortSignal: abort.signal,
+            log,
+            getStatus: () => getRuntime(channelId, id),
+            setStatus: (next) => setRuntime(channelId, id, next),
+          });
+          // Backward compatibility: older plugins return { stop } immediately and expect
+          // the gateway to hold the task open until the account is aborted/stopped.
+          if (isLegacyChannelStartResult(startResult) && typeof startResult.stop === "function") {
+            await waitForAbort(abort.signal);
+            await Promise.resolve(startResult.stop());
+          }
+        })();
         const trackedPromise = Promise.resolve(task)
           .catch((err) => {
             const message = formatErrorMessage(err);
