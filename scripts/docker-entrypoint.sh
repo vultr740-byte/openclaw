@@ -15,6 +15,11 @@ if [ -z "${OPENCLAW_WORKSPACE_DIR:-}" ]; then
   export OPENCLAW_WORKSPACE_DIR="/data/workspace"
 fi
 
+runtime_owner="node:node"
+if [ "${OPENCLAW_RUN_AS_ROOT:-}" = "1" ]; then
+  runtime_owner="root:root"
+fi
+
 should_inject_bind=false
 has_bind=false
 for arg in "$@"; do
@@ -220,7 +225,7 @@ NODE
   fi
   chmod 600 "$config_path" || true
   if [ "$(id -u)" = "0" ]; then
-    chown node:node "$config_path" || true
+    chown "$runtime_owner" "$config_path" || true
   fi
 }
 
@@ -228,7 +233,7 @@ if [ "$(id -u)" = "0" ]; then
   mkdir -p /data /data/.openclaw /data/workspace
   ensure_workspace
   ensure_legacy_workspace
-  chown -R node:node /data
+  chown -R "$runtime_owner" /data
   bootstrap_config
   if [ "${OPENCLAW_RUN_AS_ROOT:-}" = "1" ]; then
     exec "$@" "${bind_args[@]}"
