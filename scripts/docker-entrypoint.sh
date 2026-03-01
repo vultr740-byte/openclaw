@@ -126,11 +126,10 @@ let output = source.replace(/\"__TELEGRAM_ALLOW_FROM__\"/g, replacement);
 if (rawSessionDmScope) {
   try {
     const parsed = JSON.parse(output);
-    const session =
-      parsed && typeof parsed === "object" && !Array.isArray(parsed)
-        ? (parsed.session ?? {})
-        : {};
-    if (typeof session !== "object" || Array.isArray(session)) {
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      throw new Error("config root is not an object");
+    }
+    if (!parsed.session || typeof parsed.session !== "object" || Array.isArray(parsed.session)) {
       parsed.session = {};
     }
     parsed.session.dmScope = rawSessionDmScope;
