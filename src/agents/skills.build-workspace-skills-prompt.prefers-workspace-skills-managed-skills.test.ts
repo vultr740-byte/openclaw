@@ -55,7 +55,7 @@ describe("buildWorkspaceSkillsPrompt", () => {
     expect(prompt).not.toContain("Managed version");
     expect(prompt).not.toContain("Bundled version");
   });
-  it("gates by bins, config, and always", async () => {
+  it("gates by env/config/always while keeping bin-gated skills visible", async () => {
     const workspaceDir = await fixtureSuite.createCaseDir("workspace");
     const skillsDir = path.join(workspaceDir, "skills");
 
@@ -106,8 +106,8 @@ describe("buildWorkspaceSkillsPrompt", () => {
     );
     expect(defaultPrompt).toContain("always-skill");
     expect(defaultPrompt).toContain("config-skill");
-    expect(defaultPrompt).not.toContain("bin-skill");
-    expect(defaultPrompt).not.toContain("anybin-skill");
+    expect(defaultPrompt).toContain("bin-skill");
+    expect(defaultPrompt).toContain("anybin-skill");
     expect(defaultPrompt).not.toContain("env-skill");
 
     const gatedPrompt = withEnv({ HOME: workspaceDir, PATH: "" }, () =>

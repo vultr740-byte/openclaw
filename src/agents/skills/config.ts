@@ -83,11 +83,23 @@ export function shouldIncludeSkill(params: {
   if (!isBundledSkillAllowed(entry, allowBundled)) {
     return false;
   }
+  // Binaries are now treated as advisory for visibility. Keep env/config/os as
+  // hard gates so unavailable CLIs still show up in skill lists/prompt context.
+  const requiresWithoutBins = (() => {
+    const requires = entry.metadata?.requires;
+    if (!requires) {
+      return undefined;
+    }
+    return {
+      env: requires.env,
+      config: requires.config,
+    };
+  })();
   return evaluateRuntimeEligibility({
     os: entry.metadata?.os,
     remotePlatforms: eligibility?.remote?.platforms,
     always: entry.metadata?.always,
-    requires: entry.metadata?.requires,
+    requires: requiresWithoutBins,
     hasBin: hasBinary,
     hasRemoteBin: eligibility?.remote?.hasBin,
     hasAnyRemoteBin: eligibility?.remote?.hasAnyBin,
