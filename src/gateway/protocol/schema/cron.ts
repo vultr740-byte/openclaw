@@ -7,9 +7,11 @@ function cronAgentTurnPayloadSchema(params: { message: TSchema }) {
       kind: Type.Literal("agentTurn"),
       message: params.message,
       model: Type.Optional(Type.String()),
+      fallbacks: Type.Optional(Type.Array(Type.String())),
       thinking: Type.Optional(Type.String()),
       timeoutSeconds: Type.Optional(Type.Integer({ minimum: 0 })),
       allowUnsafeExternalContent: Type.Optional(Type.Boolean()),
+      lightContext: Type.Optional(Type.Boolean()),
       deliver: Type.Optional(Type.Boolean()),
       channel: Type.Optional(Type.String()),
       to: Type.Optional(Type.String()),
@@ -195,6 +197,16 @@ export const CronFollowupSchema = Type.Object(
   { additionalProperties: false },
 );
 
+export const CronFailureAlertSchema = Type.Object(
+  {
+    after: Type.Optional(Type.Integer({ minimum: 1 })),
+    channel: Type.Optional(Type.Union([Type.Literal("last"), NonEmptyString])),
+    to: Type.Optional(Type.String()),
+    cooldownMs: Type.Optional(Type.Integer({ minimum: 0 })),
+  },
+  { additionalProperties: false },
+);
+
 export const CronJobStateSchema = Type.Object(
   {
     nextRunAtMs: Type.Optional(Type.Integer({ minimum: 0 })),
@@ -208,6 +220,7 @@ export const CronJobStateSchema = Type.Object(
     lastDelivered: Type.Optional(Type.Boolean()),
     lastDeliveryStatus: Type.Optional(CronDeliveryStatusSchema),
     lastDeliveryError: Type.Optional(Type.String()),
+    lastFailureAlertAtMs: Type.Optional(Type.Integer({ minimum: 0 })),
   },
   { additionalProperties: false },
 );
@@ -229,6 +242,7 @@ export const CronJobSchema = Type.Object(
     payload: CronPayloadSchema,
     delivery: Type.Optional(CronDeliverySchema),
     followup: Type.Optional(CronFollowupSchema),
+    failureAlert: Type.Optional(Type.Union([Type.Literal(false), CronFailureAlertSchema])),
     state: CronJobStateSchema,
   },
   { additionalProperties: false },
@@ -259,6 +273,7 @@ export const CronAddParamsSchema = Type.Object(
     payload: CronPayloadSchema,
     delivery: Type.Optional(CronDeliverySchema),
     followup: Type.Optional(CronFollowupSchema),
+    failureAlert: Type.Optional(Type.Union([Type.Literal(false), CronFailureAlertSchema])),
   },
   { additionalProperties: false },
 );
@@ -273,6 +288,7 @@ export const CronJobPatchSchema = Type.Object(
     payload: Type.Optional(CronPayloadPatchSchema),
     delivery: Type.Optional(CronDeliveryPatchSchema),
     followup: Type.Optional(CronFollowupSchema),
+    failureAlert: Type.Optional(Type.Union([Type.Literal(false), CronFailureAlertSchema])),
     state: Type.Optional(Type.Partial(CronJobStateSchema)),
   },
   { additionalProperties: false },

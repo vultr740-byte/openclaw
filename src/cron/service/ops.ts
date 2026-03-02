@@ -9,6 +9,7 @@ import {
   nextWakeAtMs,
   recomputeNextRuns,
   recomputeNextRunsForMaintenance,
+  shouldStopFollowup,
 } from "./jobs.js";
 import { locked } from "./locked.js";
 import type { CronServiceState } from "./state.js";
@@ -165,7 +166,9 @@ function sortJobs(jobs: CronJob[], sortBy: CronJobsSortBy, sortDir: CronSortDir)
   return jobs.toSorted((a, b) => {
     let cmp = 0;
     if (sortBy === "name") {
-      cmp = a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
+      const aName = typeof a.name === "string" ? a.name : "";
+      const bName = typeof b.name === "string" ? b.name : "";
+      cmp = aName.localeCompare(bName, undefined, { sensitivity: "base" });
     } else if (sortBy === "updatedAtMs") {
       cmp = a.updatedAtMs - b.updatedAtMs;
     } else {
@@ -184,7 +187,9 @@ function sortJobs(jobs: CronJob[], sortBy: CronJobsSortBy, sortDir: CronSortDir)
     if (cmp !== 0) {
       return cmp * dir;
     }
-    return a.id.localeCompare(b.id);
+    const aId = typeof a.id === "string" ? a.id : "";
+    const bId = typeof b.id === "string" ? b.id : "";
+    return aId.localeCompare(bId);
   });
 }
 
@@ -267,7 +272,7 @@ export async function update(state: CronServiceState, id: string, patch: CronJob
     await ensureLoaded(state, { skipRecompute: true });
     const job = findJobOrThrow(state, id);
     const now = state.deps.nowMs();
-    applyJobPatch(job, patch);
+    applyJobPatch(job, patch, { defaultAgentId: state.deps.defaultAgentId });
     if (job.schedule.kind === "every") {
       const anchor = job.schedule.anchorMs;
       if (typeof anchor !== "number" || !Number.isFinite(anchor)) {
@@ -407,6 +412,9 @@ export async function run(state: CronServiceState, id: string, mode?: "due" | "f
       startedAt,
       endedAt,
     });
+    const followupExpired = isFollowupExpired(job, endedAt);
+    const stopFollowup = shouldStopFollowup(job, coreResult);
+    const shouldRemove = shouldDelete || followupExpired || stopFollowup;
 
     emit(state, {
       jobId: job.id,
@@ -427,7 +435,7 @@ export async function run(state: CronServiceState, id: string, mode?: "due" | "f
       usage: coreResult.usage,
     });
 
-    if (shouldDelete && state.store) {
+    if (shouldRemove && state.store) {
       state.store.jobs = state.store.jobs.filter((entry) => entry.id !== job.id);
       emit(state, { jobId: job.id, action: "removed" });
     }
@@ -435,14 +443,14 @@ export async function run(state: CronServiceState, id: string, mode?: "due" | "f
     // Manual runs should not advance other due jobs without executing them.
     // Use maintenance-only recompute to repair missing values while
     // preserving existing past-due nextRunAtMs entries for future timer ticks.
-    const postRunSnapshot = shouldDelete
+    const postRunSnapshot = shouldRemove
       ? null
       : {
           enabled: job.enabled,
           updatedAtMs: job.updatedAtMs,
           state: structuredClone(job.state),
         };
-    const postRunRemoved = shouldDelete;
+    const postRunRemoved = shouldRemove;
     // Isolated Telegram send can persist target writeback directly to disk.
     // Reload before final persist so manual `cron run` keeps those changes.
     await ensureLoaded(state, { forceReload: true, skipRecompute: true });

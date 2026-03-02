@@ -20,6 +20,7 @@ import {
   type ProviderInfo,
 } from "../../telegram/model-buttons.js";
 import type { ReplyPayload } from "../types.js";
+import { rejectUnauthorizedCommand } from "./command-gates.js";
 import type { CommandHandler } from "./commands-types.js";
 
 const PAGE_SIZE_DEFAULT = 20;
@@ -365,6 +366,14 @@ export const handleModelsCommand: CommandHandler = async (params, allowTextComma
   if (!allowTextCommands) {
     return null;
   }
+  const commandBodyNormalized = params.command.commandBodyNormalized.trim();
+  if (!commandBodyNormalized.startsWith("/models")) {
+    return null;
+  }
+  const unauthorized = rejectUnauthorizedCommand(params, "/models");
+  if (unauthorized) {
+    return unauthorized;
+  }
 
   const modelsAgentId =
     params.agentId ??
@@ -376,7 +385,7 @@ export const handleModelsCommand: CommandHandler = async (params, allowTextComma
 
   const reply = await resolveModelsCommandReply({
     cfg: params.cfg,
-    commandBodyNormalized: params.command.commandBodyNormalized,
+    commandBodyNormalized,
     surface: params.ctx.Surface,
     currentModel: params.model ? `${params.provider}/${params.model}` : undefined,
     agentDir: modelsAgentDir,
