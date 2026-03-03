@@ -149,6 +149,21 @@ async function validateScriptFileForShellBleed(params: {
   }
 }
 
+function applyMissingEnvDefaults(
+  target: Record<string, string>,
+  defaults?: Record<string, string>,
+): void {
+  if (!defaults) {
+    return;
+  }
+  for (const [key, value] of Object.entries(defaults)) {
+    if (key in target) {
+      continue;
+    }
+    target[key] = value;
+  }
+}
+
 export function createExecTool(
   defaults?: ExecToolDefaults,
   // oxlint-disable-next-line typescript/no-explicit-any
@@ -380,10 +395,12 @@ export function createExecTool(
 
       const inheritedBaseEnv = coerceEnv(process.env);
       const baseEnv = host === "sandbox" ? inheritedBaseEnv : sanitizeHostBaseEnv(inheritedBaseEnv);
+      const runtimeEnvDefaults = host === "gateway" ? defaults?.installRuntimeEnv : undefined;
 
       // Logic: Sandbox gets raw env. Host (gateway/node) must pass validation.
       // We validate BEFORE merging to prevent any dangerous vars from entering the stream.
       const requestedEnv: Record<string, string> = params.env ? { ...params.env } : {};
+      applyMissingEnvDefaults(requestedEnv, runtimeEnvDefaults);
       if (installRewriteEnv) {
         Object.assign(requestedEnv, installRewriteEnv);
       }

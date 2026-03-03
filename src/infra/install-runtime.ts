@@ -13,6 +13,14 @@ export type InstallTargetResolution = {
   workspaceDir: string;
 };
 
+export type InstallRuntimeEnv = {
+  HOME: string;
+  XDG_CONFIG_HOME: string;
+  XDG_CACHE_HOME: string;
+  XDG_STATE_HOME: string;
+  XDG_DATA_HOME: string;
+};
+
 const STATE_INSTALL_SUBDIR = path.join("tools", "runtime");
 const WORKSPACE_INSTALL_SUBDIR = path.join(".openclaw", "tools", "runtime");
 
@@ -142,4 +150,21 @@ export function resolveInstallBinDir(
     return undefined;
   }
   return path.join(root, "bin");
+}
+
+export function resolveInstallRuntimeEnv(
+  resolution: Pick<InstallTargetResolution, "target" | "stateDir" | "workspaceDir">,
+): InstallRuntimeEnv | undefined {
+  const root = resolveInstallRootDir(resolution);
+  if (!root) {
+    return undefined;
+  }
+  const home = path.join(root, "home");
+  return {
+    HOME: home,
+    XDG_CONFIG_HOME: path.join(home, ".config"),
+    XDG_CACHE_HOME: path.join(home, ".cache"),
+    XDG_STATE_HOME: path.join(home, ".local", "state"),
+    XDG_DATA_HOME: path.join(home, ".local", "share"),
+  };
 }

@@ -6,6 +6,7 @@ import {
   isContainerizedRuntime,
   normalizeInstallMode,
   resolveInstallBinDir,
+  resolveInstallRuntimeEnv,
   resolveInstallRootDir,
   resolveInstallTarget,
 } from "./install-runtime.js";
@@ -72,6 +73,29 @@ describe("install-runtime", () => {
         workspaceDir: "/tmp/workspace",
       }),
     ).toBe(path.join("/tmp/workspace", ".openclaw", "tools", "runtime", "bin"));
+  });
+
+  it("resolves runtime HOME/XDG env for local targets", () => {
+    expect(
+      resolveInstallRuntimeEnv({
+        target: "state",
+        stateDir: "/tmp/state",
+        workspaceDir: "/tmp/workspace",
+      }),
+    ).toEqual({
+      HOME: path.join("/tmp/state", "tools", "runtime", "home"),
+      XDG_CONFIG_HOME: path.join("/tmp/state", "tools", "runtime", "home", ".config"),
+      XDG_CACHE_HOME: path.join("/tmp/state", "tools", "runtime", "home", ".cache"),
+      XDG_STATE_HOME: path.join("/tmp/state", "tools", "runtime", "home", ".local", "state"),
+      XDG_DATA_HOME: path.join("/tmp/state", "tools", "runtime", "home", ".local", "share"),
+    });
+    expect(
+      resolveInstallRuntimeEnv({
+        target: "global",
+        stateDir: "/tmp/state",
+        workspaceDir: "/tmp/workspace",
+      }),
+    ).toBeUndefined();
   });
 
   it("can create and probe writable directories", () => {

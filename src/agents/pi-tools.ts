@@ -5,6 +5,7 @@ import { resolveMergedSafeBinProfileFixtures } from "../infra/exec-safe-bin-runt
 import {
   resolveInstallBinDir,
   resolveInstallRootDir,
+  resolveInstallRuntimeEnv,
   resolveInstallTarget,
 } from "../infra/install-runtime.js";
 import { logWarn } from "../logger.js";
@@ -332,6 +333,7 @@ export function createOpenClawCodingTools(options?: {
   });
   const installRootDir = resolveInstallRootDir(installTargetResolution);
   const installBinDir = resolveInstallBinDir(installTargetResolution);
+  const installRuntimeEnv = resolveInstallRuntimeEnv(installTargetResolution);
   const execPathPrepend = mergeExecPathPrepend(
     options?.exec?.pathPrepend ?? execConfig.pathPrepend,
     installBinDir,
@@ -435,6 +437,7 @@ export function createOpenClawCodingTools(options?: {
     installTarget: installTargetResolution.target,
     installRootDir,
     installBinDir,
+    installRuntimeEnv,
     sandbox: sandbox
       ? {
           containerName: sandbox.containerName,

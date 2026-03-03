@@ -38,6 +38,9 @@ const OUTPUT_EXIT_CODE_1 = "Command exited with code 1";
 const shellEcho = (message: string) => (isWin ? `Write-Output ${message}` : `echo ${message}`);
 const COMMAND_ECHO_HELLO = shellEcho("hello");
 const COMMAND_PRINT_PATH = isWin ? "Write-Output $env:PATH" : "echo $PATH";
+const COMMAND_PRINT_HOME_AND_XDG = isWin
+  ? 'Write-Output "HOME=$env:HOME"; Write-Output "XDG_CONFIG_HOME=$env:XDG_CONFIG_HOME"'
+  : 'echo "HOME=$HOME"; echo "XDG_CONFIG_HOME=$XDG_CONFIG_HOME"';
 const COMMAND_EXIT_WITH_ERROR = "exit 1";
 const SCOPE_KEY_ALPHA = "agent:alpha";
 const SCOPE_KEY_BETA = "agent:beta";
@@ -549,6 +552,55 @@ describe("exec PATH handling", () => {
     for (const index of prependIndexes) {
       expect(index).toBeLessThan(baseIndex);
     }
+  });
+});
+
+describe("exec install runtime env", () => {
+  useCapturedEnv([...SHELL_ENV_KEYS], applyDefaultShellEnv);
+
+  it("injects runtime HOME/XDG defaults on gateway host", async () => {
+    const runtimeHome = isWin ? "C:\\openclaw\\runtime-home" : "/tmp/openclaw-runtime-home";
+    const runtimeXdgConfig = isWin
+      ? "C:\\openclaw\\runtime-home\\.config"
+      : "/tmp/openclaw-runtime-home/.config";
+    const tool = createTestExecTool({
+      host: "gateway",
+      installRuntimeEnv: {
+        HOME: runtimeHome,
+        XDG_CONFIG_HOME: runtimeXdgConfig,
+        XDG_CACHE_HOME: "ignored-cache",
+        XDG_STATE_HOME: "ignored-state",
+        XDG_DATA_HOME: "ignored-data",
+      },
+    });
+
+    const result = await executeExecCommand(tool, COMMAND_PRINT_HOME_AND_XDG);
+    const lines = readTrimmedLines(result.content);
+    expect(lines).toContain(`HOME=${runtimeHome}`);
+    expect(lines).toContain(`XDG_CONFIG_HOME=${runtimeXdgConfig}`);
+  });
+
+  it("keeps explicit env overrides over runtime defaults", async () => {
+    const tool = createTestExecTool({
+      host: "gateway",
+      installRuntimeEnv: {
+        HOME: "/runtime/home",
+        XDG_CONFIG_HOME: "/runtime/home/.config",
+        XDG_CACHE_HOME: "/runtime/home/.cache",
+        XDG_STATE_HOME: "/runtime/home/.local/state",
+        XDG_DATA_HOME: "/runtime/home/.local/share",
+      },
+    });
+
+    const result = await executeExecCommand(tool, COMMAND_PRINT_HOME_AND_XDG, {
+      env: {
+        HOME: "/explicit/home",
+        XDG_CONFIG_HOME: "/explicit/config",
+      },
+    });
+    const lines = readTrimmedLines(result.content);
+    expect(lines).toContain("HOME=/explicit/home");
+    expect(lines).toContain("XDG_CONFIG_HOME=/explicit/config");
   });
 });
 
