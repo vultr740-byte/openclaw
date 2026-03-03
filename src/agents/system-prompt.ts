@@ -191,6 +191,66 @@ function buildDocsSection(params: { docsPath?: string; isMinimal: boolean; readT
   ];
 }
 
+function buildExecutionEnvironmentSection(params: {
+  runtimeInfo?: {
+    isContainer?: boolean;
+    isRemote?: boolean;
+    platform?: string;
+    homeDir?: string;
+    stateDir?: string;
+    workspaceRoot?: string;
+  };
+  sandboxInfo?: EmbeddedSandboxInfo;
+  execToolName: string;
+}) {
+  const runtime = params.runtimeInfo;
+  const lines = ["## Execution Environment"];
+  if (params.sandboxInfo?.enabled) {
+    lines.push("Environment: sandboxed Docker runtime.");
+  } else if (runtime?.isContainer) {
+    lines.push("Environment: containerized runtime.");
+  } else if (runtime?.isRemote) {
+    lines.push("Environment: remote server runtime.");
+  } else {
+    lines.push("Environment: local host runtime.");
+  }
+  if (runtime?.platform?.trim()) {
+    lines.push(`Platform hint: ${sanitizeForPromptLiteral(runtime.platform)}.`);
+  }
+  const keyPaths: string[] = [];
+  if (runtime?.homeDir?.trim()) {
+    keyPaths.push(`HOME=${sanitizeForPromptLiteral(runtime.homeDir)}`);
+  }
+  if (runtime?.stateDir?.trim()) {
+    keyPaths.push(`STATE=${sanitizeForPromptLiteral(runtime.stateDir)}`);
+  }
+  if (runtime?.workspaceRoot?.trim()) {
+    keyPaths.push(`WORKSPACE=${sanitizeForPromptLiteral(runtime.workspaceRoot)}`);
+  }
+  if (keyPaths.length > 0) {
+    lines.push(`Key paths: ${keyPaths.join(" | ")}.`);
+  }
+  lines.push(
+    "For diagnostics and incident triage, run checks yourself first before asking the user to run commands:",
+  );
+  lines.push(
+    `- Use \`${params.execToolName}\` to inspect runtime state (\`openclaw status\`, \`openclaw logs --limit 200 --plain\`, \`openclaw config validate\`).`,
+  );
+  lines.push(
+    "- If needed, inspect recent logs directly before proposing fixes (for example, gateway restart/draining/plugin errors).",
+  );
+  lines.push(
+    "- Ask the user to run commands only when tool access is blocked, permissions are insufficient, or a manual approval/restart step is required.",
+  );
+  if (runtime?.isContainer || params.sandboxInfo?.enabled) {
+    lines.push(
+      "- In container/ephemeral environments, avoid recommending global installs by default; prefer runtime-scoped install locations.",
+    );
+  }
+  lines.push("");
+  return lines;
+}
+
 export function buildAgentSystemPrompt(params: {
   workspaceDir: string;
   defaultThinkLevel?: ThinkLevel;
@@ -227,6 +287,12 @@ export function buildAgentSystemPrompt(params: {
     shell?: string;
     channel?: string;
     capabilities?: string[];
+    isContainer?: boolean;
+    isRemote?: boolean;
+    platform?: string;
+    homeDir?: string;
+    stateDir?: string;
+    workspaceRoot?: string;
     repoRoot?: string;
   };
   messageToolHints?: string[];
@@ -473,6 +539,11 @@ export function buildAgentSystemPrompt(params: {
     "Use plain human language for narration unless in a technical context.",
     "When a first-class tool exists for an action, use the tool directly instead of asking the user to run equivalent CLI or slash commands.",
     "",
+    ...buildExecutionEnvironmentSection({
+      runtimeInfo,
+      sandboxInfo: params.sandboxInfo,
+      execToolName,
+    }),
     ...safetySection,
     "## OpenClaw CLI Quick Reference",
     "OpenClaw is controlled via subcommands. Do not invent commands.",
@@ -690,6 +761,12 @@ export function buildRuntimeLine(
     model?: string;
     defaultModel?: string;
     shell?: string;
+    isContainer?: boolean;
+    isRemote?: boolean;
+    platform?: string;
+    homeDir?: string;
+    stateDir?: string;
+    workspaceRoot?: string;
     repoRoot?: string;
   },
   runtimeChannel?: string,
@@ -709,6 +786,16 @@ export function buildRuntimeLine(
     runtimeInfo?.model ? `model=${runtimeInfo.model}` : "",
     runtimeInfo?.defaultModel ? `default_model=${runtimeInfo.defaultModel}` : "",
     runtimeInfo?.shell ? `shell=${runtimeInfo.shell}` : "",
+    typeof runtimeInfo?.isContainer === "boolean"
+      ? `container=${runtimeInfo.isContainer ? "yes" : "no"}`
+      : "",
+    typeof runtimeInfo?.isRemote === "boolean"
+      ? `remote=${runtimeInfo.isRemote ? "yes" : "no"}`
+      : "",
+    runtimeInfo?.platform ? `platform=${runtimeInfo.platform}` : "",
+    runtimeInfo?.homeDir ? `home=${runtimeInfo.homeDir}` : "",
+    runtimeInfo?.stateDir ? `state=${runtimeInfo.stateDir}` : "",
+    runtimeInfo?.workspaceRoot ? `workspace=${runtimeInfo.workspaceRoot}` : "",
     runtimeChannel ? `channel=${runtimeChannel}` : "",
     runtimeChannel
       ? `capabilities=${runtimeCapabilities.length > 0 ? runtimeCapabilities.join(",") : "none"}`

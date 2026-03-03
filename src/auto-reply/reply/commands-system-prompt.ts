@@ -1,3 +1,4 @@
+import os from "node:os";
 import type { AgentTool } from "@mariozechner/pi-agent-core";
 import { resolveSessionAgentIds } from "../../agents/agent-scope.js";
 import { resolveBootstrapContextForRun } from "../../agents/bootstrap-files.js";
@@ -5,12 +6,14 @@ import { resolveDefaultModelForAgent } from "../../agents/model-selection.js";
 import type { EmbeddedContextFile } from "../../agents/pi-embedded-helpers.js";
 import { createOpenClawCodingTools } from "../../agents/pi-tools.js";
 import { resolveSandboxRuntimeStatus } from "../../agents/sandbox.js";
+import { detectRuntimeShell } from "../../agents/shell-utils.js";
 import { buildWorkspaceSkillSnapshot } from "../../agents/skills.js";
 import { getSkillsSnapshotVersion } from "../../agents/skills/refresh.js";
 import { buildSystemPromptParams } from "../../agents/system-prompt-params.js";
 import { buildAgentSystemPrompt } from "../../agents/system-prompt.js";
 import { buildToolSummaryMap } from "../../agents/tool-summaries.js";
 import type { WorkspaceBootstrapFile } from "../../agents/workspace.js";
+import { getMachineDisplayName } from "../../infra/machine-name.js";
 import { getRemoteSkillEligibility } from "../../infra/skills-remote.js";
 import { buildTtsSystemPromptHint } from "../../tts/tts.js";
 import type { HandleCommandsParams } from "./commands-types.js";
@@ -82,18 +85,20 @@ export async function resolveCommandsSystemPromptBundle(
     agentId: sessionAgentId,
   });
   const defaultModelLabel = `${defaultModelRef.provider}/${defaultModelRef.model}`;
+  const machineName = await getMachineDisplayName();
   const { runtimeInfo, userTimezone, userTime, userTimeFormat } = buildSystemPromptParams({
     config: params.cfg,
     agentId: sessionAgentId,
     workspaceDir,
     cwd: process.cwd(),
     runtime: {
-      host: "unknown",
-      os: "unknown",
-      arch: "unknown",
+      host: machineName,
+      os: `${os.type()} ${os.release()}`,
+      arch: os.arch(),
       node: process.version,
       model: `${params.provider}/${params.model}`,
       defaultModel: defaultModelLabel,
+      shell: detectRuntimeShell(),
     },
   });
   const sandboxInfo = sandboxRuntime.sandboxed

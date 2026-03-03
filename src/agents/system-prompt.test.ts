@@ -605,6 +605,12 @@ describe("buildAgentSystemPrompt", () => {
         node: "v20",
         model: "anthropic/claude",
         defaultModel: "anthropic/claude-opus-4-5",
+        isContainer: true,
+        isRemote: true,
+        platform: "railway",
+        homeDir: "/data/openclaw/home",
+        stateDir: "/data/.openclaw",
+        workspaceRoot: "/data/workspace/openclaw",
       },
       "telegram",
       ["inlineButtons"],
@@ -618,9 +624,36 @@ describe("buildAgentSystemPrompt", () => {
     expect(line).toContain("node=v20");
     expect(line).toContain("model=anthropic/claude");
     expect(line).toContain("default_model=anthropic/claude-opus-4-5");
+    expect(line).toContain("container=yes");
+    expect(line).toContain("remote=yes");
+    expect(line).toContain("platform=railway");
+    expect(line).toContain("home=/data/openclaw/home");
+    expect(line).toContain("state=/data/.openclaw");
+    expect(line).toContain("workspace=/data/workspace/openclaw");
     expect(line).toContain("channel=telegram");
     expect(line).toContain("capabilities=inlineButtons");
     expect(line).toContain("thinking=low");
+  });
+
+  it("adds execution environment guidance with diagnostic-first behavior", () => {
+    const prompt = buildAgentSystemPrompt({
+      workspaceDir: "/tmp/openclaw",
+      runtimeInfo: {
+        isContainer: true,
+        isRemote: true,
+        platform: "railway",
+        homeDir: "/data/openclaw/home",
+        stateDir: "/data/.openclaw",
+        workspaceRoot: "/data/workspace/openclaw",
+      },
+    });
+
+    expect(prompt).toContain("## Execution Environment");
+    expect(prompt).toContain("Environment: containerized runtime.");
+    expect(prompt).toContain("Platform hint: railway.");
+    expect(prompt).toContain("run checks yourself first before asking the user");
+    expect(prompt).toContain("openclaw logs --limit 200 --plain");
+    expect(prompt).toContain("avoid recommending global installs by default");
   });
 
   it("describes sandboxed runtime and elevated when allowed", () => {

@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import type { OpenClawConfig } from "../config/config.js";
+import { withEnv } from "../test-utils/env.js";
 import { buildSystemPromptParams } from "./system-prompt-params.js";
 
 async function makeTempDir(label: string): Promise<string> {
@@ -100,5 +101,60 @@ describe("buildSystemPromptParams repo root", () => {
     const { runtimeInfo } = buildParams({ workspaceDir });
 
     expect(runtimeInfo.repoRoot).toBeUndefined();
+  });
+});
+
+describe("buildSystemPromptParams runtime environment facts", () => {
+  it("detects hosted container runtime hints from environment", async () => {
+    const workspaceDir = await makeTempDir("runtime-facts");
+    const home = await makeTempDir("runtime-home");
+    const stateDir = path.join(home, "openclaw-state");
+    await fs.mkdir(stateDir, { recursive: true });
+
+    const { runtimeInfo } = withEnv(
+      {
+        HOME: home,
+        OPENCLAW_STATE_DIR: stateDir,
+        RAILWAY_PROJECT_ID: "project-id",
+        RAILWAY_ENVIRONMENT_ID: "env-id",
+      },
+      () => buildParams({ workspaceDir }),
+    );
+
+    expect(runtimeInfo.platform).toBe("railway");
+    expect(runtimeInfo.isContainer).toBe(true);
+    expect(runtimeInfo.isRemote).toBe(true);
+    expect(runtimeInfo.homeDir).toBe(home);
+    expect(runtimeInfo.stateDir).toBe(stateDir);
+    expect(runtimeInfo.workspaceRoot).toBe(workspaceDir);
+  });
+
+  it("respects explicit runtime hints over auto-detected values", async () => {
+    const workspaceDir = await makeTempDir("runtime-override");
+
+    const { runtimeInfo } = withEnv(
+      {
+        RAILWAY_PROJECT_ID: "project-id",
+        RAILWAY_ENVIRONMENT_ID: "env-id",
+      },
+      () =>
+        buildSystemPromptParams({
+          workspaceDir,
+          runtime: {
+            host: "host",
+            os: "os",
+            arch: "arch",
+            node: "node",
+            model: "model",
+            isContainer: false,
+            isRemote: false,
+            platform: "manual",
+          },
+        }),
+    );
+
+    expect(runtimeInfo.platform).toBe("manual");
+    expect(runtimeInfo.isContainer).toBe(false);
+    expect(runtimeInfo.isRemote).toBe(false);
   });
 });
