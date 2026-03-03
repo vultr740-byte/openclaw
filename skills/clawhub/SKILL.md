@@ -28,12 +28,26 @@ Install
 npm i -g clawhub
 ```
 
-Auth (publish)
+Auth (recommended; required for publish)
 
 ```bash
 clawhub login
 clawhub whoami
 ```
+
+Token login (for non-interactive environments)
+
+```bash
+clawhub login --token <token> --no-browser
+clawhub whoami
+```
+
+If install/search hits rate limits (for example HTTP 429), authenticate first and retry:
+
+1. Create/sign in to a ClawHub account on https://clawhub.ai
+2. Run `clawhub login` (browser flow) or `clawhub login --token <token> --no-browser`
+3. Verify with `clawhub whoami`
+4. Retry `clawhub install ...`
 
 Search
 
