@@ -373,7 +373,8 @@ async function resolveKeyEntry(params: {
   if (capability === "image") {
     const activeProvider = params.activeModel?.provider?.trim();
     if (activeProvider) {
-      const activeEntry = await checkProvider(activeProvider, params.activeModel?.model);
+      const activeModel = params.activeModel?.model?.trim() || DEFAULT_IMAGE_MODELS[activeProvider];
+      const activeEntry = await checkProvider(activeProvider, activeModel);
       if (activeEntry) {
         return activeEntry;
       }
@@ -565,7 +566,9 @@ async function resolveActiveModelEntry(params: {
   return {
     type: "provider",
     provider: providerId,
-    model: params.activeModel?.model,
+    model:
+      params.activeModel?.model ??
+      (params.capability === "image" ? DEFAULT_IMAGE_MODELS[providerId] : undefined),
   };
 }
 

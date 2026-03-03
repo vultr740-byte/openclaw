@@ -33,6 +33,24 @@ const ANTHROPIC_IMAGE_PRIMARY = "anthropic/claude-opus-4-6";
 const ANTHROPIC_IMAGE_FALLBACK = "anthropic/claude-opus-4-5";
 const DEFAULT_MAX_IMAGES = 20;
 
+function resolveConfiguredPrimarySupportsImage(params: {
+  cfg?: OpenClawConfig;
+  provider: string;
+  model: string;
+}): boolean | null {
+  const providerCfg = params.cfg?.models?.providers?.[params.provider] as unknown as
+    | {
+        models?: Array<{ id?: string; input?: string[] }>;
+      }
+    | undefined;
+  const models = providerCfg?.models ?? [];
+  const configured = models.find((item) => (item?.id ?? "").trim() === params.model);
+  if (!configured || !Array.isArray(configured.input)) {
+    return null;
+  }
+  return configured.input.includes("image");
+}
+
 export const __testing = {
   decodeDataUrl,
   coerceImageAssistantText,
@@ -55,7 +73,8 @@ function resolveImageToolMaxTokens(modelMaxTokens: number | undefined, requested
  *
  * - Prefer explicit config (`agents.defaults.imageModel`).
  * - Otherwise, try to "pair" the primary model with an image-capable model:
- *   - same provider (best effort)
+ *   - current primary model first when provider auth exists
+ *   - if config marks primary as non-image, swap to same-provider vision model
  *   - fall back to OpenAI/Anthropic when available
  */
 export function resolveImageModelConfigForTool(params: {
@@ -97,6 +116,12 @@ export function resolveImageModelConfigForTool(params: {
     cfg: params.cfg,
     provider: primary.provider,
   });
+  const primaryModelRef = `${primary.provider}/${primary.model}`;
+  const configuredPrimarySupportsImage = resolveConfiguredPrimarySupportsImage({
+    cfg: params.cfg,
+    provider: primary.provider,
+    model: primary.model,
+  });
   const providerOk = hasAuthForProvider({
     provider: primary.provider,
     agentDir: params.agentDir,
@@ -107,10 +132,14 @@ export function resolveImageModelConfigForTool(params: {
   // MiniMax users: always try the canonical vision model first when auth exists.
   if (primary.provider === "minimax" && providerOk) {
     preferred = "minimax/MiniMax-VL-01";
-  } else if (providerOk && providerVisionFromConfig) {
+  } else if (configuredPrimarySupportsImage === false && providerOk && providerVisionFromConfig) {
     preferred = providerVisionFromConfig;
   } else if (primary.provider === "zai" && providerOk) {
     preferred = "zai/glm-4.6v";
+  } else if (providerOk && primary.model.trim()) {
+    preferred = primaryModelRef;
+  } else if (providerOk && providerVisionFromConfig) {
+    preferred = providerVisionFromConfig;
   } else if (primary.provider === "openai" && openaiOk) {
     preferred = "openai/gpt-5-mini";
   } else if (primary.provider === "anthropic" && anthropicOk) {

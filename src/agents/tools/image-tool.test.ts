@@ -205,6 +205,20 @@ describe("image tool implicit imageModel config", () => {
     });
   });
 
+  it("prefers the current primary model instead of forcing gpt-5-mini", async () => {
+    await withTempAgentDir(async (agentDir) => {
+      vi.stubEnv("OPENAI_API_KEY", "openai-test");
+      const cfg: OpenClawConfig = {
+        agents: { defaults: { model: { primary: "openai/gpt-5.2" } } },
+      };
+      expect(resolveImageModelConfigForTool({ cfg, agentDir })).toEqual({
+        primary: "openai/gpt-5.2",
+        fallbacks: ["openai/gpt-5-mini"],
+      });
+      expect(createImageTool({ config: cfg, agentDir })).not.toBeNull();
+    });
+  });
+
   it("pairs minimax primary with MiniMax-VL-01 (and fallbacks) when auth exists", async () => {
     await withTempAgentDir(async (agentDir) => {
       vi.stubEnv("MINIMAX_API_KEY", "minimax-test");
