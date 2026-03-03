@@ -6,6 +6,8 @@ const { fetchWithSsrFGuardMock } = vi.hoisted(() => ({
 
 vi.mock("../../infra/net/fetch-guard.js", () => ({
   fetchWithSsrFGuard: fetchWithSsrFGuardMock,
+  withStrictGuardedFetchMode: (options: unknown) => options,
+  withTrustedEnvProxyGuardedFetchMode: (options: unknown) => options,
 }));
 
 import { __testing } from "./web-search.js";
@@ -32,9 +34,9 @@ describe("web_search redirect resolution hardening", () => {
         url: "https://example.com/start",
         timeoutMs: 5000,
         init: { method: "HEAD" },
-        proxy: "env",
       }),
     );
+    expect(fetchWithSsrFGuardMock.mock.calls[0]?.[0]?.proxy).toBeUndefined();
     expect(fetchWithSsrFGuardMock.mock.calls[0]?.[0]?.policy).toBeUndefined();
     expect(release).toHaveBeenCalledTimes(1);
   });

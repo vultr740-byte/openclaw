@@ -42,6 +42,7 @@ export async function resolveDeliveryTarget(
   jobPayload: {
     channel?: "last" | ChannelId;
     to?: string;
+    /** Explicit accountId from job.delivery — overrides session-derived and binding-derived values. */
     accountId?: string;
     threadId?: string | number;
     sessionKey?: string;
@@ -129,6 +130,11 @@ export async function resolveDeliveryTarget(
     }
   }
 
+  // job.delivery.accountId takes highest precedence — explicitly set by the job author.
+  if (jobPayload.accountId) {
+    accountId = jobPayload.accountId;
+  }
+
   // Carry threadId when it was explicitly set (from :topic: parsing or config)
   // or when delivering to the same recipient as the session's last conversation.
   // Session-derived threadIds are dropped when the target differs to prevent
@@ -153,20 +159,6 @@ export async function resolveDeliveryTarget(
     };
   }
 
-  if (!toCandidate) {
-    return {
-      ok: false,
-      channel,
-      to: undefined,
-      accountId,
-      threadId,
-      mode,
-      error:
-        channelResolutionError ??
-        new Error(`No delivery target resolved for channel "${channel}". Set delivery.to.`),
-    };
-  }
-
   let allowFromOverride: string[] | undefined;
   if (channel === "whatsapp") {
     const resolvedAccountId = normalizeAccountId(accountId);
@@ -182,7 +174,7 @@ export async function resolveDeliveryTarget(
       .filter((entry): entry is string => Boolean(entry));
     allowFromOverride = [...new Set([...configuredAllowFrom, ...storeAllowFrom])];
 
-    if (mode === "implicit" && allowFromOverride.length > 0) {
+    if (toCandidate && mode === "implicit" && allowFromOverride.length > 0) {
       const normalizedCurrentTarget = normalizeWhatsAppTarget(toCandidate);
       if (!normalizedCurrentTarget || !allowFromOverride.includes(normalizedCurrentTarget)) {
         toCandidate = allowFromOverride[0];
