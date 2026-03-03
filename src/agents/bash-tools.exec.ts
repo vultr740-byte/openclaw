@@ -43,7 +43,10 @@ import {
   resolveWorkdir,
   truncateMiddle,
 } from "./bash-tools.shared.js";
-import { rewriteGlobalInstallCommand } from "./install-command-rewrite.js";
+import {
+  resolveGlobalInstallEnvRedirect,
+  rewriteGlobalInstallCommand,
+} from "./install-command-rewrite.js";
 import { assertSandboxPath } from "./sandbox-paths.js";
 
 export type { BashSandboxConfig } from "./bash-tools.shared.js";
@@ -329,11 +332,21 @@ export function createExecTool(
         installRoot: defaults?.installRootDir,
         installBinDir: defaults?.installBinDir,
       });
+      const installEnvRedirect = resolveGlobalInstallEnvRedirect({
+        command: effectiveCommand,
+        target: defaults?.installTarget ?? "global",
+        installRoot: defaults?.installRootDir,
+        installBinDir: defaults?.installBinDir,
+      });
       if (installRewrite.rewritten) {
         effectiveCommand = installRewrite.command;
         installRewriteEnv = installRewrite.env;
         warnings.push(
           `Auto install redirect: converted global installer command to local target (${defaults?.installTarget ?? "global"}).`,
+        );
+      } else if (installEnvRedirect) {
+        warnings.push(
+          `Auto install redirect: applying env-based local installer fallback (${defaults?.installTarget ?? "global"}).`,
         );
       }
 
@@ -401,6 +414,7 @@ export function createExecTool(
       // We validate BEFORE merging to prevent any dangerous vars from entering the stream.
       const requestedEnv: Record<string, string> = params.env ? { ...params.env } : {};
       applyMissingEnvDefaults(requestedEnv, runtimeEnvDefaults);
+      applyMissingEnvDefaults(requestedEnv, installEnvRedirect);
       if (installRewriteEnv) {
         Object.assign(requestedEnv, installRewriteEnv);
       }

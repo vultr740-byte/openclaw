@@ -27,6 +27,12 @@ const NOTIFY_POLL_OPTIONS = {
   interval: POLL_INTERVAL_MS,
 };
 const SHELL_ENV_KEYS = ["SHELL"] as const;
+const INSTALL_ENV_KEYS = [
+  "NPM_CONFIG_PREFIX",
+  "npm_config_prefix",
+  "PNPM_HOME",
+  "BUN_INSTALL",
+] as const;
 const PATH_SHELL_ENV_KEYS = ["PATH", "SHELL"] as const;
 const PROCESS_STATUS_RUNNING = "running";
 const PROCESS_STATUS_COMPLETED = "completed";
@@ -41,6 +47,9 @@ const COMMAND_PRINT_PATH = isWin ? "Write-Output $env:PATH" : "echo $PATH";
 const COMMAND_PRINT_HOME_AND_XDG = isWin
   ? 'Write-Output "HOME=$env:HOME"; Write-Output "XDG_CONFIG_HOME=$env:XDG_CONFIG_HOME"'
   : 'echo "HOME=$HOME"; echo "XDG_CONFIG_HOME=$XDG_CONFIG_HOME"';
+const COMMAND_PRINT_NPM_PREFIX = isWin
+  ? 'Write-Output "NPM_CONFIG_PREFIX=$env:NPM_CONFIG_PREFIX"'
+  : 'echo "NPM_CONFIG_PREFIX=$NPM_CONFIG_PREFIX"';
 const COMMAND_EXIT_WITH_ERROR = "exit 1";
 const SCOPE_KEY_ALPHA = "agent:alpha";
 const SCOPE_KEY_BETA = "agent:beta";
@@ -556,7 +565,7 @@ describe("exec PATH handling", () => {
 });
 
 describe("exec install runtime env", () => {
-  useCapturedEnv([...SHELL_ENV_KEYS], applyDefaultShellEnv);
+  useCapturedEnv([...SHELL_ENV_KEYS, ...INSTALL_ENV_KEYS], applyDefaultShellEnv);
 
   it("injects runtime HOME/XDG defaults on gateway host", async () => {
     const runtimeHome = isWin ? "C:\\openclaw\\runtime-home" : "/tmp/openclaw-runtime-home";
@@ -601,6 +610,41 @@ describe("exec install runtime env", () => {
     const lines = readTrimmedLines(result.content);
     expect(lines).toContain("HOME=/explicit/home");
     expect(lines).toContain("XDG_CONFIG_HOME=/explicit/config");
+  });
+
+  it("applies env fallback for complex global install commands", async () => {
+    delete process.env.NPM_CONFIG_PREFIX;
+    delete process.env.npm_config_prefix;
+    const installRoot = isWin ? "C:\\openclaw\\runtime" : "/tmp/openclaw-runtime";
+    const installBinDir = isWin ? "C:\\openclaw\\runtime\\bin" : "/tmp/openclaw-runtime/bin";
+    const tool = createTestExecTool({
+      host: "gateway",
+      installTarget: "state",
+      installRootDir: installRoot,
+      installBinDir,
+    });
+
+    const command = isWin
+      ? 'if ($false) { npm i -g agent-browser }; Write-Output "NPM_CONFIG_PREFIX=$env:NPM_CONFIG_PREFIX"'
+      : 'if false; then npm i -g agent-browser; fi; echo "NPM_CONFIG_PREFIX=$NPM_CONFIG_PREFIX"';
+    const result = await executeExecCommand(tool, command);
+    const lines = readTrimmedLines(result.content);
+    expect(lines).toContain(`NPM_CONFIG_PREFIX=${installRoot}`);
+  });
+
+  it("does not inject npm prefix for non-install commands", async () => {
+    delete process.env.NPM_CONFIG_PREFIX;
+    delete process.env.npm_config_prefix;
+    const tool = createTestExecTool({
+      host: "gateway",
+      installTarget: "state",
+      installRootDir: "/tmp/runtime-root",
+      installBinDir: "/tmp/runtime-root/bin",
+    });
+
+    const result = await executeExecCommand(tool, COMMAND_PRINT_NPM_PREFIX);
+    const lines = readTrimmedLines(result.content);
+    expect(lines).toContain("NPM_CONFIG_PREFIX=");
   });
 });
 

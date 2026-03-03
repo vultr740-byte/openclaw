@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { rewriteGlobalInstallCommand } from "./install-command-rewrite.js";
+import {
+  hasGlobalInstallIntent,
+  resolveGlobalInstallEnvRedirect,
+  rewriteGlobalInstallCommand,
+} from "./install-command-rewrite.js";
 
 describe("rewriteGlobalInstallCommand", () => {
   const installRoot = "/data/.openclaw/tools/runtime";
@@ -71,5 +75,39 @@ describe("rewriteGlobalInstallCommand", () => {
       installBinDir,
     });
     expect(result.rewritten).toBe(false);
+  });
+
+  it("detects global install intent in chained commands", () => {
+    expect(
+      hasGlobalInstallIntent("npm i -g agent-browser && agent-browser open https://example.com"),
+    ).toBe(true);
+    expect(hasGlobalInstallIntent("if false; then npm i -g agent-browser; fi")).toBe(true);
+    expect(hasGlobalInstallIntent("npm i agent-browser")).toBe(false);
+  });
+
+  it("resolves env-based redirect fallback for complex global install commands", () => {
+    const env = resolveGlobalInstallEnvRedirect({
+      command: "npm install -g agent-browser && agent-browser install --with-deps",
+      target: "state",
+      installRoot,
+      installBinDir,
+    });
+    expect(env).toEqual({
+      NPM_CONFIG_PREFIX: installRoot,
+      npm_config_prefix: installRoot,
+      PNPM_HOME: installBinDir,
+      BUN_INSTALL: installRoot,
+      YARN_GLOBAL_FOLDER: `${installRoot}/yarn-global`,
+    });
+  });
+
+  it("skips env redirect fallback in global mode", () => {
+    const env = resolveGlobalInstallEnvRedirect({
+      command: "npm install -g agent-browser",
+      target: "global",
+      installRoot,
+      installBinDir,
+    });
+    expect(env).toBeUndefined();
   });
 });

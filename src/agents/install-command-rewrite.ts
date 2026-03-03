@@ -1,3 +1,4 @@
+import path from "node:path";
 import type { InstallTarget } from "../infra/install-runtime.js";
 
 export type InstallCommandRewrite = {
@@ -6,6 +7,13 @@ export type InstallCommandRewrite = {
   reason?: string;
   env?: Record<string, string>;
 };
+
+const GLOBAL_INSTALL_INTENT_PATTERNS: ReadonlyArray<RegExp> = [
+  /\bnpm\s+(?:install|i)\b[\s\S]*?(?:\s|^)(?:-g|--global)(?:\s|$)/i,
+  /\bpnpm\s+(?:add|install|i)\b[\s\S]*?(?:\s|^)(?:-g|--global)(?:\s|$)/i,
+  /\byarn\s+global\s+add\b/i,
+  /\bbun\s+add\b[\s\S]*?(?:\s|^)(?:-g|--global)(?:\s|$)/i,
+];
 
 function quoteIfNeeded(value: string): string {
   if (/^[A-Za-z0-9_./:@%+=,-]+$/.test(value)) {
@@ -114,6 +122,37 @@ function rewriteBun(tokens: string[], installRoot: string): InstallCommandRewrit
     env: {
       BUN_INSTALL: installRoot,
     },
+  };
+}
+
+export function hasGlobalInstallIntent(command: string): boolean {
+  const trimmed = command.trim();
+  if (!trimmed) {
+    return false;
+  }
+  return GLOBAL_INSTALL_INTENT_PATTERNS.some((pattern) => pattern.test(trimmed));
+}
+
+export function resolveGlobalInstallEnvRedirect(params: {
+  command: string;
+  target: InstallTarget;
+  installRoot?: string;
+  installBinDir?: string;
+}): Record<string, string> | undefined {
+  if (params.target === "global" || !params.installRoot) {
+    return undefined;
+  }
+  if (!hasGlobalInstallIntent(params.command)) {
+    return undefined;
+  }
+  const installRoot = params.installRoot;
+  const installBinDir = params.installBinDir ?? path.join(installRoot, "bin");
+  return {
+    NPM_CONFIG_PREFIX: installRoot,
+    npm_config_prefix: installRoot,
+    PNPM_HOME: installBinDir,
+    BUN_INSTALL: installRoot,
+    YARN_GLOBAL_FOLDER: path.join(installRoot, "yarn-global"),
   };
 }
 
