@@ -57,6 +57,7 @@ export type SkillCommandSpec = {
 };
 
 export type SkillsInstallPreferences = {
+  mode: "auto" | "global";
   preferBrew: boolean;
   nodeManager: "npm" | "pnpm" | "yarn" | "bun";
 };

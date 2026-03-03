@@ -2,6 +2,11 @@ import { codingTools, createReadTool, readTool } from "@mariozechner/pi-coding-a
 import type { OpenClawConfig } from "../config/config.js";
 import type { ToolLoopDetectionConfig } from "../config/types.tools.js";
 import { resolveMergedSafeBinProfileFixtures } from "../infra/exec-safe-bin-runtime-policy.js";
+import {
+  resolveInstallBinDir,
+  resolveInstallRootDir,
+  resolveInstallTarget,
+} from "../infra/install-runtime.js";
 import { logWarn } from "../logger.js";
 import { getPluginToolMeta } from "../plugins/tools.js";
 import { isSubagentSessionKey } from "../routing/session-key.js";
@@ -141,7 +146,22 @@ function resolveExecConfig(params: { cfg?: OpenClawConfig; agentId?: string }) {
     notifyOnExitEmptySuccess:
       agentExec?.notifyOnExitEmptySuccess ?? globalExec?.notifyOnExitEmptySuccess,
     applyPatch: agentExec?.applyPatch ?? globalExec?.applyPatch,
+    installMode: cfg?.skills?.install?.mode,
   };
+}
+
+function mergeExecPathPrepend(base?: string[], installBinDir?: string): string[] | undefined {
+  const merged: string[] = [];
+  const seen = new Set<string>();
+  for (const raw of [...(base ?? []), ...(installBinDir ? [installBinDir] : [])]) {
+    const entry = raw?.trim();
+    if (!entry || seen.has(entry)) {
+      continue;
+    }
+    seen.add(entry);
+    merged.push(entry);
+  }
+  return merged.length > 0 ? merged : undefined;
 }
 
 export function resolveToolLoopDetectionConfig(params: {
@@ -300,7 +320,18 @@ export function createOpenClawCodingTools(options?: {
     sandbox?.tools,
     subagentPolicy,
   ]);
+  const workspaceRoot = resolveWorkspaceRoot(options?.workspaceDir);
   const execConfig = resolveExecConfig({ cfg: options?.config, agentId });
+  const installTargetResolution = resolveInstallTarget({
+    mode: execConfig.installMode,
+    workspaceDir: workspaceRoot,
+  });
+  const installRootDir = resolveInstallRootDir(installTargetResolution);
+  const installBinDir = resolveInstallBinDir(installTargetResolution);
+  const execPathPrepend = mergeExecPathPrepend(
+    options?.exec?.pathPrepend ?? execConfig.pathPrepend,
+    installBinDir,
+  );
   const fsConfig = resolveToolFsConfig({ cfg: options?.config, agentId });
   const fsPolicy = createToolFsPolicy({
     workspaceOnly: fsConfig.workspaceOnly,
@@ -308,7 +339,6 @@ export function createOpenClawCodingTools(options?: {
   const sandboxRoot = sandbox?.workspaceDir;
   const sandboxFsBridge = sandbox?.fsBridge;
   const allowWorkspaceWrites = sandbox?.workspaceAccess !== "ro";
-  const workspaceRoot = resolveWorkspaceRoot(options?.workspaceDir);
   const workspaceOnly = fsPolicy.workspaceOnly;
   const applyPatchConfig = execConfig.applyPatch;
   // Secure by default: apply_patch is workspace-contained unless explicitly disabled.
@@ -378,7 +408,7 @@ export function createOpenClawCodingTools(options?: {
     security: options?.exec?.security ?? execConfig.security,
     ask: options?.exec?.ask ?? execConfig.ask,
     node: options?.exec?.node ?? execConfig.node,
-    pathPrepend: options?.exec?.pathPrepend ?? execConfig.pathPrepend,
+    pathPrepend: execPathPrepend,
     safeBins: options?.exec?.safeBins ?? execConfig.safeBins,
     safeBinTrustedDirs: options?.exec?.safeBinTrustedDirs ?? execConfig.safeBinTrustedDirs,
     safeBinProfiles: options?.exec?.safeBinProfiles ?? execConfig.safeBinProfiles,
@@ -398,6 +428,9 @@ export function createOpenClawCodingTools(options?: {
     notifyOnExit: options?.exec?.notifyOnExit ?? execConfig.notifyOnExit,
     notifyOnExitEmptySuccess:
       options?.exec?.notifyOnExitEmptySuccess ?? execConfig.notifyOnExitEmptySuccess,
+    installTarget: installTargetResolution.target,
+    installRootDir,
+    installBinDir,
     sandbox: sandbox
       ? {
           containerName: sandbox.containerName,

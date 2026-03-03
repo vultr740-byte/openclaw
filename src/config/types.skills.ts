@@ -20,6 +20,8 @@ export type SkillsLoadConfig = {
 };
 
 export type SkillsInstallConfig = {
+  /** Install location mode for skill-managed installers (default: auto). */
+  mode?: "auto" | "global";
   preferBrew?: boolean;
   nodeManager?: "npm" | "pnpm" | "yarn" | "bun";
 };

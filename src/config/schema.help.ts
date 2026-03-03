@@ -561,6 +561,12 @@ export const FIELD_HELP: Record<string, string> = {
     "Ordered model preferences specifically for video understanding before shared media fallback applies. Prioritize models with strong multimodal video support to minimize degraded summaries.",
   "tools.media.video.scope":
     "Scope selector controlling when video understanding is attempted across incoming events. Narrow scope in noisy channels, and broaden only where video interpretation is core to workflow.",
+  "skills.install.mode":
+    'Installer target mode for skill dependency installs: "auto" prefers local non-global installs in containers (state first, workspace fallback), while "global" preserves classic system-wide installs.',
+  "skills.install.preferBrew":
+    "Prefer Homebrew installers when a skill offers multiple install methods and brew is available on the host.",
+  "skills.install.nodeManager":
+    'Node package manager used for skill node installers ("npm", "pnpm", "yarn", "bun").',
   "skills.load.watch":
     "Enable filesystem watching for skill-definition changes so updates can be applied without full process restart. Keep enabled in development workflows and disable in immutable production images.",
   "skills.load.watchDebounceMs":

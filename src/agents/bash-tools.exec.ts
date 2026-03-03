@@ -43,6 +43,7 @@ import {
   resolveWorkdir,
   truncateMiddle,
 } from "./bash-tools.shared.js";
+import { rewriteGlobalInstallCommand } from "./install-command-rewrite.js";
 import { assertSandboxPath } from "./sandbox-paths.js";
 
 export type { BashSandboxConfig } from "./bash-tools.shared.js";
@@ -229,7 +230,9 @@ export function createExecTool(
       const maxOutput = DEFAULT_MAX_OUTPUT;
       const pendingMaxOutput = DEFAULT_PENDING_MAX_OUTPUT;
       const warnings: string[] = [];
+      let effectiveCommand = params.command;
       let execCommandOverride: string | undefined;
+      let installRewriteEnv: Record<string, string> | undefined;
       const backgroundRequested = params.background === true;
       const yieldRequested = typeof params.yieldMs === "number";
       if (!allowBackground && (backgroundRequested || yieldRequested)) {
@@ -304,6 +307,21 @@ export function createExecTool(
       if (elevatedRequested) {
         logInfo(`exec: elevated command ${truncateMiddle(params.command, 120)}`);
       }
+
+      const installRewrite = rewriteGlobalInstallCommand({
+        command: effectiveCommand,
+        target: defaults?.installTarget ?? "global",
+        installRoot: defaults?.installRootDir,
+        installBinDir: defaults?.installBinDir,
+      });
+      if (installRewrite.rewritten) {
+        effectiveCommand = installRewrite.command;
+        installRewriteEnv = installRewrite.env;
+        warnings.push(
+          `Auto install redirect: converted global installer command to local target (${defaults?.installTarget ?? "global"}).`,
+        );
+      }
+
       const configuredHost = defaults?.host ?? "sandbox";
       const sandboxHostConfigured = defaults?.host === "sandbox";
       const requestedHost = normalizeExecHost(params.host) ?? null;
@@ -365,16 +383,22 @@ export function createExecTool(
 
       // Logic: Sandbox gets raw env. Host (gateway/node) must pass validation.
       // We validate BEFORE merging to prevent any dangerous vars from entering the stream.
-      if (host !== "sandbox" && params.env) {
-        validateHostEnv(params.env);
+      const requestedEnv: Record<string, string> = params.env ? { ...params.env } : {};
+      if (installRewriteEnv) {
+        Object.assign(requestedEnv, installRewriteEnv);
       }
 
-      const mergedEnv = params.env ? { ...baseEnv, ...params.env } : baseEnv;
+      if (host !== "sandbox" && Object.keys(requestedEnv).length > 0) {
+        validateHostEnv(requestedEnv);
+      }
+
+      const mergedEnv =
+        Object.keys(requestedEnv).length > 0 ? { ...baseEnv, ...requestedEnv } : baseEnv;
 
       const env = sandbox
         ? buildSandboxEnv({
             defaultPath: DEFAULT_PATH,
-            paramsEnv: params.env,
+            paramsEnv: Object.keys(requestedEnv).length > 0 ? requestedEnv : undefined,
             sandboxEnv: sandbox.env,
             containerWorkdir: containerWorkdir ?? sandbox.containerWorkdir,
           })
@@ -400,10 +424,10 @@ export function createExecTool(
 
       if (host === "node") {
         return executeNodeHostCommand({
-          command: params.command,
+          command: effectiveCommand,
           workdir,
           env,
-          requestedEnv: params.env,
+          requestedEnv: Object.keys(requestedEnv).length > 0 ? requestedEnv : undefined,
           requestedNode: params.node?.trim(),
           boundNode: defaults?.node?.trim(),
           sessionKey: defaults?.sessionKey,
@@ -425,7 +449,7 @@ export function createExecTool(
 
       if (host === "gateway" && !bypassApprovals) {
         const gatewayResult = await processGatewayAllowlist({
-          command: params.command,
+          command: effectiveCommand,
           workdir,
           env,
           pty: params.pty === true && !sandbox,
@@ -466,11 +490,11 @@ export function createExecTool(
 
       // Preflight: catch a common model failure mode (shell syntax leaking into Python/JS sources)
       // before we execute and burn tokens in cron loops.
-      await validateScriptFileForShellBleed({ command: params.command, workdir });
+      await validateScriptFileForShellBleed({ command: effectiveCommand, workdir });
 
       const run = await runExecProcess({
         command: params.command,
-        execCommand: execCommandOverride,
+        execCommand: execCommandOverride ?? effectiveCommand,
         workdir,
         env,
         sandbox,

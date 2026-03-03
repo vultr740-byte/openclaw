@@ -35,6 +35,9 @@ export {
 
 export function resolveSkillsInstallPreferences(config?: OpenClawConfig): SkillsInstallPreferences {
   const raw = config?.skills?.install;
+  const modeRaw = typeof raw?.mode === "string" ? raw.mode.trim() : "";
+  const mode = modeRaw.toLowerCase();
+  const installMode: SkillsInstallPreferences["mode"] = mode === "global" ? "global" : "auto";
   const preferBrew = raw?.preferBrew ?? true;
   const managerRaw = typeof raw?.nodeManager === "string" ? raw.nodeManager.trim() : "";
   const manager = managerRaw.toLowerCase();
@@ -42,5 +45,5 @@ export function resolveSkillsInstallPreferences(config?: OpenClawConfig): Skills
     manager === "pnpm" || manager === "yarn" || manager === "bun" || manager === "npm"
       ? manager
       : "npm";
-  return { preferBrew, nodeManager };
+  return { mode: installMode, preferBrew, nodeManager };
 }

@@ -2,6 +2,12 @@ import fs from "node:fs";
 import path from "node:path";
 import type { OpenClawConfig } from "../config/config.js";
 import { resolveBrewExecutable } from "../infra/brew.js";
+import {
+  resolveInstallBinDir,
+  resolveInstallRootDir,
+  resolveInstallTarget,
+  type InstallTarget,
+} from "../infra/install-runtime.js";
 import { runCommandWithTimeout, type CommandOptions } from "../process/exec.js";
 import { scanDirectoryWithSummary } from "../security/skill-scanner.js";
 import { resolveUserPath } from "../utils.js";
@@ -98,24 +104,86 @@ function findInstallSpec(entry: SkillEntry, installId: string): SkillInstallSpec
   return undefined;
 }
 
-function buildNodeInstallCommand(packageName: string, prefs: SkillsInstallPreferences): string[] {
+function buildNodeInstallCommand(params: {
+  packageName: string;
+  prefs: SkillsInstallPreferences;
+  target: InstallTarget;
+  installRootDir?: string;
+  installBinDir?: string;
+}): { argv: string[]; env?: NodeJS.ProcessEnv } {
+  const { packageName, prefs, target, installRootDir, installBinDir } = params;
+  const localInstall = target !== "global" && installRootDir;
+
   switch (prefs.nodeManager) {
     case "pnpm":
-      return ["pnpm", "add", "-g", "--ignore-scripts", packageName];
+      if (localInstall) {
+        return {
+          argv: [
+            "pnpm",
+            "add",
+            "-g",
+            "--global-dir",
+            installRootDir,
+            "--global-bin-dir",
+            installBinDir ?? path.join(installRootDir, "bin"),
+            "--ignore-scripts",
+            packageName,
+          ],
+        };
+      }
+      return { argv: ["pnpm", "add", "-g", "--ignore-scripts", packageName] };
     case "yarn":
-      return ["yarn", "global", "add", "--ignore-scripts", packageName];
+      if (localInstall) {
+        return {
+          argv: [
+            "yarn",
+            "global",
+            "add",
+            "--prefix",
+            installRootDir,
+            "--ignore-scripts",
+            packageName,
+          ],
+        };
+      }
+      return { argv: ["yarn", "global", "add", "--ignore-scripts", packageName] };
     case "bun":
-      return ["bun", "add", "-g", "--ignore-scripts", packageName];
+      if (localInstall) {
+        return {
+          argv: ["bun", "add", "-g", "--ignore-scripts", packageName],
+          env: { BUN_INSTALL: installRootDir },
+        };
+      }
+      return { argv: ["bun", "add", "-g", "--ignore-scripts", packageName] };
     default:
-      return ["npm", "install", "-g", "--ignore-scripts", packageName];
+      if (localInstall) {
+        return {
+          argv: [
+            "npm",
+            "install",
+            "-g",
+            "--prefix",
+            installRootDir,
+            "--ignore-scripts",
+            packageName,
+          ],
+        };
+      }
+      return { argv: ["npm", "install", "-g", "--ignore-scripts", packageName] };
   }
 }
 
 function buildInstallCommand(
   spec: SkillInstallSpec,
   prefs: SkillsInstallPreferences,
+  runtime: {
+    target: InstallTarget;
+    installRootDir?: string;
+    installBinDir?: string;
+  },
 ): {
   argv: string[] | null;
+  env?: NodeJS.ProcessEnv;
   error?: string;
 } {
   switch (spec.kind) {
@@ -129,9 +197,13 @@ function buildInstallCommand(
       if (!spec.package) {
         return { argv: null, error: "missing node package" };
       }
-      return {
-        argv: buildNodeInstallCommand(spec.package, prefs),
-      };
+      return buildNodeInstallCommand({
+        packageName: spec.package,
+        prefs,
+        target: runtime.target,
+        installRootDir: runtime.installRootDir,
+        installBinDir: runtime.installBinDir,
+      });
     }
     case "go": {
       if (!spec.module) {
@@ -424,7 +496,32 @@ export async function installSkill(params: SkillInstallRequest): Promise<SkillIn
   }
 
   const prefs = resolveSkillsInstallPreferences(params.config);
-  const command = buildInstallCommand(spec, prefs);
+  const installTargetResolution = resolveInstallTarget({
+    mode: prefs.mode,
+    workspaceDir,
+  });
+  const installRootDir = resolveInstallRootDir(installTargetResolution);
+  const installBinDir = resolveInstallBinDir(installTargetResolution);
+  if (installRootDir) {
+    try {
+      fs.mkdirSync(installRootDir, { recursive: true });
+      if (installBinDir) {
+        fs.mkdirSync(installBinDir, { recursive: true });
+      }
+    } catch (err) {
+      return withWarnings(
+        createInstallFailure({
+          message: `Failed to prepare local install directories: ${String(err)}`,
+        }),
+        warnings,
+      );
+    }
+  }
+  const command = buildInstallCommand(spec, prefs, {
+    target: installTargetResolution.target,
+    installRootDir,
+    installBinDir,
+  });
   if (command.error) {
     return withWarnings(
       {
@@ -458,11 +555,15 @@ export async function installSkill(params: SkillInstallRequest): Promise<SkillIn
     argv[0] = brewExe;
   }
 
-  let env: NodeJS.ProcessEnv | undefined;
-  if (spec.kind === "go" && brewExe) {
-    const brewBin = await resolveBrewBinDir(timeoutMs, brewExe);
-    if (brewBin) {
-      env = { GOBIN: brewBin };
+  let env: NodeJS.ProcessEnv | undefined = command.env ? { ...command.env } : undefined;
+  if (spec.kind === "go") {
+    if (installBinDir) {
+      env = { ...env, GOBIN: installBinDir };
+    } else if (brewExe) {
+      const brewBin = await resolveBrewBinDir(timeoutMs, brewExe);
+      if (brewBin) {
+        env = { ...env, GOBIN: brewBin };
+      }
     }
   }
 
