@@ -57,7 +57,6 @@ import { resolveModel } from "./model.js";
 import { runEmbeddedAttempt } from "./run/attempt.js";
 import type { RunEmbeddedPiAgentParams } from "./run/params.js";
 import { buildEmbeddedRunPayloads } from "./run/payloads.js";
-import { shouldRetryWithSelfDiagnosticGuard } from "./run/self-diagnostic-guard.js";
 import {
   truncateOversizedToolResultsInSession,
   sessionLikelyHasOversizedToolResults,
@@ -124,14 +123,6 @@ const BASE_RUN_RETRY_ITERATIONS = 24;
 const RUN_RETRY_ITERATIONS_PER_PROFILE = 8;
 const MIN_RUN_RETRY_ITERATIONS = 32;
 const MAX_RUN_RETRY_ITERATIONS = 160;
-
-const SELF_DIAGNOSTIC_RETRY_INSTRUCTION = `
-Execution correction (highest priority):
-- Do not ask the user to run terminal commands for diagnostics.
-- Run diagnostics yourself first with available tools and report concrete findings.
-- Ask the user to run commands only if blocked by permissions, missing capability, or required external access.
-- In container/ephemeral environments, avoid global installs (for example npm -g) unless explicitly requested.
-`.trim();
 
 function resolveMaxRunRetryIterations(profileCandidateCount: number): number {
   const scaled =
@@ -664,8 +655,6 @@ export async function runEmbeddedPiAgent(
       let lastRunPromptUsage: ReturnType<typeof normalizeUsage> | undefined;
       let autoCompactionCount = 0;
       let runLoopIterations = 0;
-      let selfDiagnosticRetryUsed = false;
-      let forceSelfDiagnosticCorrection = false;
       const maybeMarkAuthProfileFailure = async (failure: {
         profileId?: string;
         reason?: Parameters<typeof markAuthProfileFailure>[0]["reason"] | null;
@@ -724,14 +713,6 @@ export async function runEmbeddedPiAgent(
 
           const prompt =
             provider === "anthropic" ? scrubAnthropicRefusalMagic(params.prompt) : params.prompt;
-          const extraSystemPrompt = forceSelfDiagnosticCorrection
-            ? [params.extraSystemPrompt, SELF_DIAGNOSTIC_RETRY_INSTRUCTION]
-                .filter(
-                  (part): part is string => typeof part === "string" && part.trim().length > 0,
-                )
-                .join("\n\n")
-            : params.extraSystemPrompt;
-          forceSelfDiagnosticCorrection = false;
 
           const attempt = await runEmbeddedAttempt({
             sessionId: params.sessionId,
@@ -788,7 +769,7 @@ export async function runEmbeddedPiAgent(
             onReasoningEnd: params.onReasoningEnd,
             onToolResult: params.onToolResult,
             onAgentEvent: params.onAgentEvent,
-            extraSystemPrompt,
+            extraSystemPrompt: params.extraSystemPrompt,
             inputProvenance: params.inputProvenance,
             streamParams: params.streamParams,
             ownerNumbers: params.ownerNumbers,
@@ -1262,27 +1243,6 @@ export async function runEmbeddedPiAgent(
             inlineToolResultsAllowed: false,
             didSendViaMessagingTool: attempt.didSendViaMessagingTool,
           });
-
-          if (
-            !selfDiagnosticRetryUsed &&
-            !aborted &&
-            !timedOut &&
-            !promptError &&
-            shouldRetryWithSelfDiagnosticGuard({
-              assistantTexts: attempt.assistantTexts,
-              toolMetas: attempt.toolMetas,
-              lastToolError: attempt.lastToolError,
-              disableTools: params.disableTools,
-            })
-          ) {
-            selfDiagnosticRetryUsed = true;
-            forceSelfDiagnosticCorrection = true;
-            log.warn(
-              `[self-diagnostic-guard] sessionKey=${params.sessionKey ?? params.sessionId} ` +
-                `provider=${provider}/${modelId} retry=1 reason=delegated_user_commands`,
-            );
-            continue;
-          }
 
           // Timeout aborts can leave the run without any assistant payloads.
           // Emit an explicit timeout error instead of silently completing, so
