@@ -276,6 +276,16 @@ describe("resolvePdfModelConfigForTool", () => {
     });
   });
 
+  it("defaults to agents.defaults.model.primary for non-native provider when pdfModel is unset", async () => {
+    await withTempAgentDir(async (agentDir) => {
+      vi.stubEnv("OPENAI_API_KEY", "openai-test");
+      const cfg: OpenClawConfig = {
+        agents: { defaults: { model: { primary: "openai/gpt-5.2" } } },
+      };
+      expect(resolvePdfModelConfigForTool({ cfg, agentDir })?.primary).toBe("openai/gpt-5.2");
+    });
+  });
+
   it("falls back to imageModel config when no pdfModel set", async () => {
     await withTempAgentDir(async (agentDir) => {
       const cfg: OpenClawConfig = {

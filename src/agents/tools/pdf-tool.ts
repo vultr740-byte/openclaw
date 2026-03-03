@@ -96,6 +96,8 @@ export function resolvePdfModelConfigForTool(params: {
     provider: primary.provider,
   });
 
+  const primaryModelRef = `${primary.provider}/${primary.model}`;
+
   if (primary.provider === "anthropic" && anthropicOk) {
     preferred = ANTHROPIC_PDF_PRIMARY;
   } else if (primary.provider === "google" && googleOk && providerVision) {
@@ -107,7 +109,9 @@ export function resolvePdfModelConfigForTool(params: {
   } else if (googleOk) {
     preferred = "google/gemini-2.5-pro";
   } else if (openaiOk) {
-    preferred = "openai/gpt-5-mini";
+    // Avoid hardcoded model ids that may not exist in OpenAI-compatible deployments
+    // (notably Azure, which uses deployment names). Prefer the normal default model.
+    preferred = primaryModelRef;
   }
 
   if (preferred?.trim()) {
