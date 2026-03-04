@@ -41,6 +41,20 @@ export class ToolAuthorizationError extends ToolInputError {
   }
 }
 
+export class ToolExecutionError extends Error {
+  readonly toolErrorDetails: Record<string, unknown>;
+
+  constructor(message: string, toolErrorDetails: Record<string, unknown>) {
+    super(message);
+    this.name = "ToolExecutionError";
+    this.toolErrorDetails = toolErrorDetails;
+  }
+}
+
+export function isToolExecutionError(value: unknown): value is ToolExecutionError {
+  return value instanceof ToolExecutionError;
+}
+
 export function createActionGate<T extends Record<string, boolean | undefined>>(
   actions: T | undefined,
 ): ActionGate<T> {

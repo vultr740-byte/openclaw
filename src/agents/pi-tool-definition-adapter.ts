@@ -13,7 +13,7 @@ import {
   runBeforeToolCallHook,
 } from "./pi-tools.before-tool-call.js";
 import { normalizeToolName } from "./tool-policy.js";
-import { jsonResult } from "./tools/common.js";
+import { isToolExecutionError, jsonResult } from "./tools/common.js";
 
 type AnyAgentTool = AgentTool;
 
@@ -73,6 +73,17 @@ function stringifyToolPayload(payload: unknown): string {
     // Fall through to String(payload) for non-serializable values.
   }
   return String(payload);
+}
+
+function readStructuredToolErrorDetails(err: unknown): Record<string, unknown> | undefined {
+  if (!isToolExecutionError(err)) {
+    return undefined;
+  }
+  const details = err.toolErrorDetails;
+  if (!isPlainObject(details)) {
+    return undefined;
+  }
+  return details;
 }
 
 function normalizeToolExecutionResult(params: {
@@ -182,11 +193,22 @@ export function toToolDefinitions(tools: AnyAgentTool[]): ToolDefinition[] {
           }
           logError(`[tools] ${normalizedName} failed: ${described.message}`);
 
-          return jsonResult({
+          const structured = readStructuredToolErrorDetails(err);
+          const payload: Record<string, unknown> = {
             status: "error",
             tool: normalizedName,
             error: described.message,
-          });
+          };
+          if (structured) {
+            for (const [key, value] of Object.entries(structured)) {
+              if (key === "status" || key === "tool" || key === "error") {
+                continue;
+              }
+              payload[key] = value;
+            }
+          }
+
+          return jsonResult(payload);
         }
       },
     } satisfies ToolDefinition;

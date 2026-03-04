@@ -6,7 +6,13 @@ import { wrapExternalContent, wrapWebContent } from "../../security/external-con
 import { normalizeSecretInput } from "../../utils/normalize-secret-input.js";
 import { stringEnum } from "../schema/typebox.js";
 import type { AnyAgentTool } from "./common.js";
-import { jsonResult, readNumberParam, readStringParam } from "./common.js";
+import {
+  ToolExecutionError,
+  isToolExecutionError,
+  jsonResult,
+  readNumberParam,
+  readStringParam,
+} from "./common.js";
 import {
   extractReadableContent,
   htmlToMarkdown,
@@ -43,6 +49,14 @@ const DEFAULT_FIRECRAWL_BASE_URL = "https://api.firecrawl.dev";
 const DEFAULT_FIRECRAWL_MAX_AGE_MS = 172_800_000;
 const DEFAULT_FETCH_USER_AGENT =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_7_2) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36";
+const SKILL_RETRY_HINT =
+  "Check <available_skills> and retry with a matching domain/task skill before asking the user to paste content.";
+
+type WebFetchStructuredErrorCode =
+  | "blocked_interstitial"
+  | "extraction_failed"
+  | "fetch_failed"
+  | "firecrawl_failed";
 
 const FETCH_CACHE = new Map<string, CacheEntry<Record<string, unknown>>>();
 
@@ -207,6 +221,120 @@ function looksLikeHtml(value: string): boolean {
   }
   const head = trimmed.slice(0, 256).toLowerCase();
   return head.startsWith("<!doctype html") || head.startsWith("<html");
+}
+
+const BLOCKED_PAGE_STRONG_SIGNALS: RegExp[] = [
+  /\bprivacy[-\s]?related extensions may cause issues\b/i,
+  /\baccess denied\b/i,
+  /\battention required\b/i,
+  /\bverify you are human\b/i,
+];
+
+const BLOCKED_PAGE_WEAK_SIGNALS: RegExp[] = [
+  /\bsomething went wrong\b/i,
+  /\bcaptcha\b/i,
+  /\benable javascript\b/i,
+  /\blog in to\b/i,
+  /\bsign in to\b/i,
+  /\brate limit\b/i,
+  /\bunsupported browser\b/i,
+];
+
+function isLikelyBlockedPage(value: string): boolean {
+  const normalized = value.replace(/\s+/g, " ").trim();
+  if (!normalized) {
+    return false;
+  }
+  if (BLOCKED_PAGE_STRONG_SIGNALS.some((pattern) => pattern.test(normalized))) {
+    return true;
+  }
+  const weakHits = BLOCKED_PAGE_WEAK_SIGNALS.reduce(
+    (count, pattern) => (pattern.test(normalized) ? count + 1 : count),
+    0,
+  );
+  if (weakHits === 0) {
+    return false;
+  }
+  if (normalized.length <= 1_600) {
+    return weakHits >= 2;
+  }
+  return weakHits >= 3;
+}
+
+function formatBlockedPageErrorDetail(value: string, maxChars: number): string {
+  const sanitized = formatWebFetchErrorDetail({
+    detail: value,
+    contentType: "text/html",
+    maxChars: Math.max(200, maxChars),
+  });
+  const wrapped = wrapWebFetchContent(sanitized || "Blocked/interstitial page content.", maxChars);
+  return wrapped.text;
+}
+
+function resolveWebFetchDomain(url: string): string | undefined {
+  try {
+    return new URL(url).hostname.toLowerCase();
+  } catch {
+    return undefined;
+  }
+}
+
+function createStructuredWebFetchError(params: {
+  message: string;
+  errorCode: WebFetchStructuredErrorCode;
+  url?: string;
+  details?: Record<string, unknown>;
+}): ToolExecutionError {
+  const messageWithHint = params.message.includes("<available_skills>")
+    ? params.message
+    : `${params.message} ${SKILL_RETRY_HINT}`;
+  const domain = params.url ? resolveWebFetchDomain(params.url) : undefined;
+  return new ToolExecutionError(messageWithHint, {
+    error_code: params.errorCode,
+    recoverable: true,
+    recommended_action: "find_matching_skill",
+    recommendation: SKILL_RETRY_HINT,
+    ...(domain ? { domain } : {}),
+    ...(params.url ? { failed_url: params.url } : {}),
+    ...params.details,
+  });
+}
+
+function maybeAppendSkillRetryHint(
+  error: unknown,
+  context?: { url?: string },
+): ToolExecutionError | Error {
+  if (error instanceof SsrFBlockedError) {
+    return error;
+  }
+  if (isToolExecutionError(error)) {
+    if (error.message.includes("<available_skills>") && error.toolErrorDetails.recommendation) {
+      return error;
+    }
+    const domain = context?.url ? resolveWebFetchDomain(context.url) : undefined;
+    const details = {
+      ...error.toolErrorDetails,
+      recoverable: error.toolErrorDetails.recoverable ?? true,
+      recommended_action: error.toolErrorDetails.recommended_action ?? "find_matching_skill",
+      recommendation: error.toolErrorDetails.recommendation ?? SKILL_RETRY_HINT,
+      ...(domain && !error.toolErrorDetails.domain ? { domain } : {}),
+      ...(context?.url && !error.toolErrorDetails.failed_url ? { failed_url: context.url } : {}),
+    };
+    const messageWithHint = error.message.includes("<available_skills>")
+      ? error.message
+      : `${error.message} ${SKILL_RETRY_HINT}`;
+    return new ToolExecutionError(messageWithHint, details);
+  }
+  const message = error instanceof Error ? error.message : String(error);
+  const trimmed = message.trim();
+  if (!trimmed || /^invalid url:/i.test(trimmed)) {
+    return error instanceof Error ? error : new Error(trimmed || "web_fetch failed");
+  }
+  return createStructuredWebFetchError({
+    message: trimmed,
+    errorCode: "fetch_failed",
+    url: context?.url,
+  });
 }
 
 function formatWebFetchErrorDetail(params: {
@@ -485,7 +613,17 @@ async function maybeFetchFirecrawlWebFetchPayload(
     return null;
   }
 
-  const firecrawl = await fetchFirecrawlContent(firecrawlParams);
+  let firecrawl: Awaited<ReturnType<typeof fetchFirecrawlContent>>;
+  try {
+    firecrawl = await fetchFirecrawlContent(firecrawlParams);
+  } catch (error) {
+    const message = error instanceof Error ? error.message.trim() : String(error).trim();
+    throw createStructuredWebFetchError({
+      message: message || "Firecrawl fetch failed.",
+      errorCode: "firecrawl_failed",
+      url: params.urlToFetch,
+    });
+  }
   const payload = buildFirecrawlWebFetchPayload({
     firecrawl,
     rawUrl: params.url,
@@ -561,7 +699,12 @@ async function runWebFetch(params: WebFetchRuntimeParams): Promise<Record<string
     if (payload) {
       return payload;
     }
-    throw error;
+    const message = error instanceof Error ? error.message.trim() : String(error).trim();
+    throw createStructuredWebFetchError({
+      message: message || "Web fetch failed before response was received.",
+      errorCode: "fetch_failed",
+      url: params.url,
+    });
   }
 
   try {
@@ -585,7 +728,12 @@ async function runWebFetch(params: WebFetchRuntimeParams): Promise<Record<string
         maxChars: DEFAULT_ERROR_MAX_CHARS,
       });
       const wrappedDetail = wrapWebFetchContent(detail || res.statusText, DEFAULT_ERROR_MAX_CHARS);
-      throw new Error(`Web fetch failed (${res.status}): ${wrappedDetail.text}`);
+      throw createStructuredWebFetchError({
+        message: `Web fetch failed (${res.status}): ${wrappedDetail.text}`,
+        errorCode: "fetch_failed",
+        url: finalUrl,
+        details: { status_code: res.status },
+      });
     }
 
     const contentType = res.headers.get("content-type") ?? "application/octet-stream";
@@ -613,9 +761,29 @@ async function runWebFetch(params: WebFetchRuntimeParams): Promise<Record<string
           extractMode: params.extractMode,
         });
         if (readable?.text) {
-          text = readable.text;
-          title = readable.title;
-          extractor = "readability";
+          if (isLikelyBlockedPage(readable.text)) {
+            const firecrawl = await tryFirecrawlFallback({ ...params, url: finalUrl });
+            if (firecrawl && !isLikelyBlockedPage(firecrawl.text)) {
+              text = firecrawl.text;
+              title = firecrawl.title;
+              extractor = "firecrawl";
+            } else {
+              const detail = formatBlockedPageErrorDetail(readable.text, DEFAULT_ERROR_MAX_CHARS);
+              throw createStructuredWebFetchError({
+                message: [
+                  "Web fetch got a blocked/interstitial page (login wall, anti-bot, or preview placeholder) instead of the target content.",
+                  "Before asking the user to paste content, check <available_skills> and retry with a matching domain/task skill.",
+                  `Blocked page excerpt: ${detail}`,
+                ].join(" "),
+                errorCode: "blocked_interstitial",
+                url: finalUrl,
+              });
+            }
+          } else {
+            text = readable.text;
+            title = readable.title;
+            extractor = "readability";
+          }
         } else {
           const firecrawl = await tryFirecrawlFallback({ ...params, url: finalUrl });
           if (firecrawl) {
@@ -623,15 +791,20 @@ async function runWebFetch(params: WebFetchRuntimeParams): Promise<Record<string
             title = firecrawl.title;
             extractor = "firecrawl";
           } else {
-            throw new Error(
-              "Web fetch extraction failed: Readability and Firecrawl returned no content.",
-            );
+            throw createStructuredWebFetchError({
+              message:
+                "Web fetch extraction failed: Readability and Firecrawl returned no content.",
+              errorCode: "extraction_failed",
+              url: finalUrl,
+            });
           }
         }
       } else {
-        throw new Error(
-          "Web fetch extraction failed: Readability disabled and Firecrawl unavailable.",
-        );
+        throw createStructuredWebFetchError({
+          message: "Web fetch extraction failed: Readability disabled and Firecrawl unavailable.",
+          errorCode: "extraction_failed",
+          url: finalUrl,
+        });
       }
     } else if (contentType.includes("application/json")) {
       try {
@@ -744,30 +917,34 @@ export function createWebFetchTool(options?: {
       const extractMode = readStringParam(params, "extractMode") === "text" ? "text" : "markdown";
       const maxChars = readNumberParam(params, "maxChars", { integer: true });
       const maxCharsCap = resolveFetchMaxCharsCap(fetch);
-      const result = await runWebFetch({
-        url,
-        extractMode,
-        maxChars: resolveMaxChars(
-          maxChars ?? fetch?.maxChars,
-          DEFAULT_FETCH_MAX_CHARS,
-          maxCharsCap,
-        ),
-        maxResponseBytes,
-        maxRedirects: resolveMaxRedirects(fetch?.maxRedirects, DEFAULT_FETCH_MAX_REDIRECTS),
-        timeoutSeconds: resolveTimeoutSeconds(fetch?.timeoutSeconds, DEFAULT_TIMEOUT_SECONDS),
-        cacheTtlMs: resolveCacheTtlMs(fetch?.cacheTtlMinutes, DEFAULT_CACHE_TTL_MINUTES),
-        userAgent,
-        readabilityEnabled,
-        firecrawlEnabled,
-        firecrawlApiKey,
-        firecrawlBaseUrl,
-        firecrawlOnlyMainContent,
-        firecrawlMaxAgeMs,
-        firecrawlProxy: "auto",
-        firecrawlStoreInCache: true,
-        firecrawlTimeoutSeconds,
-      });
-      return jsonResult(result);
+      try {
+        const result = await runWebFetch({
+          url,
+          extractMode,
+          maxChars: resolveMaxChars(
+            maxChars ?? fetch?.maxChars,
+            DEFAULT_FETCH_MAX_CHARS,
+            maxCharsCap,
+          ),
+          maxResponseBytes,
+          maxRedirects: resolveMaxRedirects(fetch?.maxRedirects, DEFAULT_FETCH_MAX_REDIRECTS),
+          timeoutSeconds: resolveTimeoutSeconds(fetch?.timeoutSeconds, DEFAULT_TIMEOUT_SECONDS),
+          cacheTtlMs: resolveCacheTtlMs(fetch?.cacheTtlMinutes, DEFAULT_CACHE_TTL_MINUTES),
+          userAgent,
+          readabilityEnabled,
+          firecrawlEnabled,
+          firecrawlApiKey,
+          firecrawlBaseUrl,
+          firecrawlOnlyMainContent,
+          firecrawlMaxAgeMs,
+          firecrawlProxy: "auto",
+          firecrawlStoreInCache: true,
+          firecrawlTimeoutSeconds,
+        });
+        return jsonResult(result);
+      } catch (error) {
+        throw maybeAppendSkillRetryHint(error, { url });
+      }
     },
   };
 }

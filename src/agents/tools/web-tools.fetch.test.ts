@@ -2,6 +2,7 @@ import { EnvHttpProxyAgent } from "undici";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as ssrf from "../../infra/net/ssrf.js";
 import { withFetchPreconnect } from "../../test-utils/fetch-mock.js";
+import { isToolExecutionError } from "./common.js";
 import { createWebFetchTool } from "./web-tools.js";
 
 type MockResponse = {
@@ -141,16 +142,27 @@ async function executeFetch(
   return tool?.execute?.("call", params);
 }
 
-async function captureToolErrorMessage(params: {
+async function captureToolError(params: {
   tool: ReturnType<typeof createWebFetchTool>;
   url: string;
 }) {
   try {
     await params.tool?.execute?.("call", { url: params.url });
-    return "";
+    return undefined;
   } catch (error) {
-    return (error as Error).message;
+    return error;
   }
+}
+
+async function captureToolErrorMessage(params: {
+  tool: ReturnType<typeof createWebFetchTool>;
+  url: string;
+}) {
+  const error = await captureToolError(params);
+  if (!error || !(error instanceof Error)) {
+    return "";
+  }
+  return error.message;
 }
 
 describe("web_fetch extraction fallbacks", () => {
@@ -360,6 +372,122 @@ describe("web_fetch extraction fallbacks", () => {
     ).rejects.toThrow("Readability disabled");
   });
 
+  it("appends skill fallback guidance when web_fetch extraction fails", async () => {
+    installMockFetch(
+      (input: RequestInfo | URL) =>
+        Promise.resolve(
+          htmlResponse("<html><body>hi</body></html>", requestUrl(input)),
+        ) as Promise<Response>,
+    );
+
+    const tool = createFetchTool({
+      readability: false,
+      firecrawl: { enabled: false },
+    });
+    const message = await captureToolErrorMessage({
+      tool,
+      url: "https://example.com/readability-off-with-hint",
+    });
+
+    expect(message).toContain("Readability disabled");
+    expect(message).toContain("<available_skills>");
+    expect(message).toContain("matching domain/task skill");
+  });
+
+  it("throws structured recoverable metadata for skill fallback errors", async () => {
+    installMockFetch(
+      (input: RequestInfo | URL) =>
+        Promise.resolve(
+          htmlResponse("<html><body>hi</body></html>", requestUrl(input)),
+        ) as Promise<Response>,
+    );
+
+    const tool = createFetchTool({
+      readability: false,
+      firecrawl: { enabled: false },
+    });
+    const error = await captureToolError({
+      tool,
+      url: "https://x.com/blocked-link",
+    });
+
+    expect(isToolExecutionError(error)).toBe(true);
+    if (!isToolExecutionError(error)) {
+      throw new Error("expected ToolExecutionError");
+    }
+    expect(error.toolErrorDetails).toMatchObject({
+      error_code: "extraction_failed",
+      recoverable: true,
+      recommended_action: "find_matching_skill",
+      domain: "x.com",
+    });
+  });
+
+  it("emits fetch_failed for non-ok HTTP responses when fallback is unavailable", async () => {
+    installMockFetch(
+      (input: RequestInfo | URL) =>
+        Promise.resolve(
+          errorHtmlResponse("<html><body><h1>Not Found</h1></body></html>", 404, requestUrl(input)),
+        ) as Promise<Response>,
+    );
+
+    const tool = createFetchTool({ firecrawl: { enabled: false } });
+    const error = await captureToolError({
+      tool,
+      url: "https://example.com/not-found",
+    });
+
+    expect(isToolExecutionError(error)).toBe(true);
+    if (!isToolExecutionError(error)) {
+      throw new Error("expected ToolExecutionError");
+    }
+    expect(error.toolErrorDetails).toMatchObject({
+      error_code: "fetch_failed",
+      recoverable: true,
+      recommended_action: "find_matching_skill",
+      failed_url: "https://example.com/not-found",
+    });
+  });
+
+  it("emits firecrawl_failed when firecrawl fallback errors", async () => {
+    installMockFetch((input: RequestInfo | URL) => {
+      const url = requestUrl(input);
+      if (url.includes("api.firecrawl.dev")) {
+        return Promise.resolve(firecrawlError()) as Promise<Response>;
+      }
+      return Promise.resolve(
+        errorHtmlResponse("<html><body><h1>Blocked</h1></body></html>", 403, url),
+      ) as Promise<Response>;
+    });
+
+    const tool = createFetchTool({ firecrawl: { apiKey: "firecrawl-test" } });
+    const error = await captureToolError({
+      tool,
+      url: "https://example.com/firecrawl-failure",
+    });
+
+    expect(isToolExecutionError(error)).toBe(true);
+    if (!isToolExecutionError(error)) {
+      throw new Error("expected ToolExecutionError");
+    }
+    expect(error.toolErrorDetails).toMatchObject({
+      error_code: "firecrawl_failed",
+      recoverable: true,
+      recommended_action: "find_matching_skill",
+      failed_url: "https://example.com/firecrawl-failure",
+    });
+  });
+
+  it("does not append skill fallback guidance for invalid URL errors", async () => {
+    const tool = createFetchTool({ firecrawl: { enabled: false } });
+    const message = await captureToolErrorMessage({
+      tool,
+      url: "not-a-valid-url",
+    });
+
+    expect(message).toBe("Invalid URL: must be http or https");
+  });
+
   it("throws when readability is empty and firecrawl fails", async () => {
     installMockFetch((input: RequestInfo | URL) => {
       const url = requestUrl(input);
@@ -375,6 +503,53 @@ describe("web_fetch extraction fallbacks", () => {
     await expect(
       executeFetch(tool, { url: "https://example.com/readability-empty" }),
     ).rejects.toThrow("Readability and Firecrawl returned no content");
+  });
+
+  it("falls back to firecrawl when readability output is a blocked/interstitial placeholder", async () => {
+    installMockFetch((input: RequestInfo | URL) => {
+      const url = requestUrl(input);
+      if (url.includes("api.firecrawl.dev")) {
+        return Promise.resolve(
+          firecrawlResponse("real content via firecrawl"),
+        ) as Promise<Response>;
+      }
+      return Promise.resolve(
+        htmlResponse(
+          "<!doctype html><html><body><h1>Something went wrong</h1><p>privacy related extensions may cause issues</p></body></html>",
+          url,
+        ),
+      ) as Promise<Response>;
+    });
+
+    const tool = createFirecrawlTool();
+    const result = await executeFetch(tool, { url: "https://example.com/blocked-placeholder" });
+    const details = result?.details as { extractor?: string; text?: string };
+    expect(details.extractor).toBe("firecrawl");
+    expect(details.text).toContain("real content via firecrawl");
+  });
+
+  it("throws blocked/interstitial guidance when readability looks blocked and firecrawl is unavailable", async () => {
+    installMockFetch(
+      (input: RequestInfo | URL) =>
+        Promise.resolve(
+          htmlResponse(
+            "<!doctype html><html><body><h1>Something went wrong</h1><p>privacy related extensions may cause issues</p></body></html>",
+            requestUrl(input),
+          ),
+        ) as Promise<Response>,
+    );
+
+    const tool = createFetchTool({
+      firecrawl: { enabled: false },
+    });
+    const message = await captureToolErrorMessage({
+      tool,
+      url: "https://example.com/blocked-placeholder-no-firecrawl",
+    });
+
+    expect(message).toContain("blocked/interstitial page");
+    expect(message).toContain("<available_skills>");
+    expect(message).toContain("Blocked page excerpt:");
   });
 
   it("uses firecrawl when direct fetch fails", async () => {

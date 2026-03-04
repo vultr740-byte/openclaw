@@ -308,6 +308,7 @@ describe("createOpenClawCodingTools", () => {
       "sessions_spawn",
       "subagents",
       "session_status",
+      "skills_search",
       "image",
     ]);
     expect(findUnionKeywordOffenders(tools, { onlyNames: coreTools })).toEqual([]);

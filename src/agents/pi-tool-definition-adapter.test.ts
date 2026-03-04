@@ -2,6 +2,7 @@ import type { AgentTool } from "@mariozechner/pi-agent-core";
 import { Type } from "@sinclair/typebox";
 import { describe, expect, it } from "vitest";
 import { toToolDefinitions } from "./pi-tool-definition-adapter.js";
+import { ToolExecutionError } from "./tools/common.js";
 
 type ToolExecute = ReturnType<typeof toToolDefinitions>[number]["execute"];
 const extensionContext = {} as Parameters<ToolExecute>[4];
@@ -53,6 +54,34 @@ describe("pi tool definition adapter", () => {
       status: "error",
       tool: "exec",
       error: "nope",
+    });
+  });
+
+  it("preserves structured tool error metadata", async () => {
+    const tool = {
+      name: "web_fetch",
+      label: "Web Fetch",
+      description: "throws structured error",
+      parameters: Type.Object({}),
+      execute: async () => {
+        throw new ToolExecutionError("blocked", {
+          error_code: "blocked_interstitial",
+          recoverable: true,
+          recommended_action: "find_matching_skill",
+          domain: "x.com",
+        });
+      },
+    } satisfies AgentTool;
+
+    const result = await executeTool(tool, "call-structured");
+    expect(result.details).toMatchObject({
+      status: "error",
+      tool: "web_fetch",
+      error: "blocked",
+      error_code: "blocked_interstitial",
+      recoverable: true,
+      recommended_action: "find_matching_skill",
+      domain: "x.com",
     });
   });
 
