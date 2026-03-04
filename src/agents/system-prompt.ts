@@ -24,8 +24,10 @@ function buildSkillsSection(params: { skillsPrompt?: string; readToolName: strin
   }
   const skillSelectionDefaults = [
     "### Skill selection priorities",
-    "When applicable, always choose these skills first:",
-    "- **X/Twitter** (`x.com` / `twitter.com`): `x-twitter-fetch`.",
+    "When a message includes URLs or link-dependent tasks:",
+    "- Scan `<available_skills>` for a domain-specific or task-specific skill first.",
+    "- If a matching skill exists, use that skill before generic tools like `web_fetch`.",
+    "- If generic fetch/search fails (for example login walls, anti-bot pages, blocked previews), retry via a matching skill before asking the user to paste content.",
   ].join("\n");
   const combinedPrompt = `${trimmed}\n\n${skillSelectionDefaults}`.trim();
   return [

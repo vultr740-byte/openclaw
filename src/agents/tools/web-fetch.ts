@@ -736,7 +736,7 @@ export function createWebFetchTool(options?: {
     label: "Web Fetch",
     name: "web_fetch",
     description:
-      "Fetch and extract readable content from a URL (HTML → markdown/text). Use for lightweight page access without browser automation.",
+      "Fetch and extract readable content from a URL (HTML → markdown/text). Use for lightweight page access without browser automation. Before using web_fetch for domain-specific links, check <available_skills> for a matching skill; if direct fetch is blocked or low-quality, retry with a matching skill before asking the user for manual paste.",
     parameters: WebFetchSchema,
     execute: async (_toolCallId, args) => {
       const params = args as Record<string, unknown>;

@@ -287,6 +287,13 @@ describe("web_fetch extraction fallbacks", () => {
     expect(requestInit?.dispatcher).not.toBeInstanceOf(EnvHttpProxyAgent);
   });
 
+  it("mentions skill-first fallback guidance in web_fetch description", () => {
+    const tool = createFetchTool({ firecrawl: { enabled: false } });
+    expect(tool?.description).toContain("<available_skills>");
+    expect(tool?.description).toContain("matching skill");
+    expect(tool?.description).toContain("before asking the user for manual paste");
+  });
+
   // NOTE: Test for wrapping url/finalUrl/warning fields requires DNS mocking.
   // The sanitization of these fields is verified by external-content.test.ts tests.
 
