@@ -34,6 +34,12 @@
     "nativeSkills": "auto"
   },
   "tools": {
+    "sessions": {
+      "visibility": "all"
+    },
+    "agentToAgent": {
+      "enabled": true
+    },
     "elevated": {
       "allowFrom": {
         "telegram": "__TELEGRAM_ALLOW_FROM__"
@@ -51,6 +57,7 @@
     }
   },
   "gateway": {
+    "mode": "local",
     "bind": "lan",
     "auth": {
       "mode": "token",
@@ -77,8 +84,20 @@
     "entries": {
       "telegram": {
         "enabled": true
+      },
+      "acpx": {
+        "enabled": true
       }
     }
+  },
+  "acp": {
+    "enabled": true,
+    "dispatch": {
+      "enabled": true
+    },
+    "backend": "acpx",
+    "defaultAgent": "codex",
+    "allowedAgents": ["codex"]
   },
   "models": {
     "providers": {
