@@ -7,17 +7,41 @@ description: Fetch X/Twitter data via twitter-viewer.com (timelines + pagination
 
 This skill provides two ways to fetch X/Twitter data:
 
-1. **twitter-viewer.com** for user timelines (paged).
-2. **FxEmbed (api.fxtwitter.com)** for a single tweet, often with X Article metadata/blocks.
+1. **r.jina.ai** as primary timeline snapshot source (best-effort readable timeline).
+2. **twitter-viewer.com** for cursor-based timeline pagination.
+3. **FxEmbed (api.fxtwitter.com)** for a single tweet, often with X Article metadata/blocks.
 
 ## Choose an API
 
-- **Need a list / timeline / pagination?** Use `scripts/fetch_user_tweets.py` (twitter-viewer.com).
+- **Need a list / timeline / pagination?** Use `scripts/fetch_user_tweets.py` (default provider order: `jina,twitter-viewer`).
 - **Need one tweet / X Article extraction?** Use `scripts/fetch_tweet.py` (FxEmbed).
 
-## User timeline (twitter-viewer.com)
+### Mandatory routing rules
+
+- If input contains a direct post URL (`x.com/.../status/<id>` or `twitter.com/.../status/<id>`):
+  - Always use `scripts/fetch_tweet.py` first.
+  - Do not start with `scripts/fetch_user_tweets.py`.
+- Only use `scripts/fetch_user_tweets.py` when the user asks for a timeline/list/pagination.
+- Before asking the user to paste text manually, run at least one single-post retry with `scripts/fetch_tweet.py` using `--url` or `--message`.
+
+### Ordered fallback inside `fetch_tweet.py`
+
+For single post fetch, the script now retries sources in this order (unless overridden):
+
+1. `syndication` (official embed endpoint)
+2. `fx` (`api.fxtwitter.com`)
+3. `vx` (`api.vxtwitter.com`)
+
+Each attempt is recorded in the output `attempts` array.
+
+## User timeline
 
 Script: `scripts/fetch_user_tweets.py`
+
+Provider behavior:
+
+- Default: try `jina` first, fallback to `twitter-viewer`.
+- If `--cursor` is provided: script will prioritize `twitter-viewer` (because `jina` has no cursor pagination).
 
 Fetch the first page:
 
@@ -29,6 +53,13 @@ Pagination:
 
 ```bash
 python3 scripts/fetch_user_tweets.py --username elonmusk --cursor "<nextCursor>" --pretty
+```
+
+Force provider order:
+
+```bash
+python3 scripts/fetch_user_tweets.py --username elonmusk --providers "jina,twitter-viewer" --pretty
+python3 scripts/fetch_user_tweets.py --username elonmusk --providers "twitter-viewer" --cursor "<nextCursor>" --pretty
 ```
 
 Notes:
@@ -53,6 +84,24 @@ Examples:
 python3 scripts/fetch_tweet.py --username elonmusk --tweet-id <tweetId> --pretty
 python3 scripts/fetch_tweet.py --url 'https://x.com/elonmusk/status/<tweetId>' --pretty
 python3 scripts/fetch_tweet.py --message 'check this https://x.com/elonmusk/status/<tweetId>' --pretty
+```
+
+Recommended first attempt for direct links:
+
+```bash
+python3 scripts/fetch_tweet.py --url 'https://x.com/<user>/status/<tweetId>' --extract all --pretty
+```
+
+If the first attempt fails, retry once with:
+
+```bash
+python3 scripts/fetch_tweet.py --message 'https://x.com/<user>/status/<tweetId>' --extract all --pretty
+```
+
+Hard-fields only mode (numbers / date ranges / links / steps / claims):
+
+```bash
+python3 scripts/fetch_tweet.py --url 'https://x.com/<user>/status/<tweetId>' --extract-fields --pretty
 ```
 
 Extraction modes:
