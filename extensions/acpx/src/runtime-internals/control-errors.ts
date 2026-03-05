@@ -4,7 +4,7 @@ import {
   asTrimmedString,
   type AcpxErrorEvent,
   isRecord,
-} from "./shared.js";
+} from "./shared.ts";
 
 export function parseControlJsonError(value: unknown): AcpxErrorEvent | null {
   if (!isRecord(value)) {

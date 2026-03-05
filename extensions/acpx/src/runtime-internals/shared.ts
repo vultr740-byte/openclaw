@@ -1,4 +1,4 @@
-import type { ResolvedAcpxPluginConfig } from "../config.js";
+import type { ResolvedAcpxPluginConfig } from "../config.ts";
 
 export type AcpxHandleState = {
   name: string;

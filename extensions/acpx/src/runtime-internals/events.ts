@@ -7,7 +7,7 @@ import {
   type AcpxErrorEvent,
   type AcpxJsonObject,
   isRecord,
-} from "./shared.js";
+} from "./shared.ts";
 
 export function toAcpxErrorEvent(value: unknown): AcpxErrorEvent | null {
   if (!isRecord(value)) {

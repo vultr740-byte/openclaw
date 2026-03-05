@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parsePromptEventLine } from "./events.js";
+import { parsePromptEventLine } from "./events.ts";
 
 describe("parsePromptEventLine", () => {
   it("parses raw ACP session/update agent_message_chunk lines", () => {

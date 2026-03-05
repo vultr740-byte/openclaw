@@ -6,7 +6,7 @@ import {
   ACPX_LOCAL_INSTALL_COMMAND,
   ACPX_PINNED_VERSION,
   buildAcpxLocalInstallCommand,
-} from "./config.js";
+} from "./config.ts";
 
 const { resolveSpawnFailureMock, spawnAndCollectMock } = vi.hoisted(() => ({
   resolveSpawnFailureMock: vi.fn<
@@ -15,12 +15,12 @@ const { resolveSpawnFailureMock, spawnAndCollectMock } = vi.hoisted(() => ({
   spawnAndCollectMock: vi.fn(),
 }));
 
-vi.mock("./runtime-internals/process.js", () => ({
+vi.mock("./runtime-internals/process.ts", () => ({
   resolveSpawnFailure: resolveSpawnFailureMock,
   spawnAndCollect: spawnAndCollectMock,
 }));
 
-import { checkAcpxVersion, ensureAcpx } from "./ensure.js";
+import { checkAcpxVersion, ensureAcpx } from "./ensure.ts";
 
 describe("acpx ensure", () => {
   const tempDirs: string[] = [];

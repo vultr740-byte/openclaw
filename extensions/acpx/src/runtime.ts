@@ -18,7 +18,7 @@ import {
   parseJsonLines,
   parsePromptEventLine,
   toAcpxErrorEvent,
-} from "./runtime-internals/events.js";
+} from "./runtime-internals/events.ts";
 import {
   resolveSpawnFailure,
   type SpawnCommandCache,
@@ -27,7 +27,7 @@ import {
   spawnAndCollect,
   spawnWithResolvedCommand,
   waitForExit,
-} from "./runtime-internals/process.js";
+} from "./runtime-internals/process.ts";
 import {
   asOptionalString,
   asTrimmedString,
@@ -36,7 +36,7 @@ import {
   isRecord,
   type AcpxHandleState,
   type AcpxJsonObject,
-} from "./runtime-internals/shared.js";
+} from "./runtime-internals/shared.ts";
 
 export const ACPX_BACKEND_ID = "acpx";
 

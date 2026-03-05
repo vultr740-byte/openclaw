@@ -5,7 +5,7 @@ import {
   ACPX_PINNED_VERSION,
   createAcpxPluginConfigSchema,
   resolveAcpxPluginConfig,
-} from "./config.js";
+} from "./config.ts";
 
 describe("acpx plugin config parsing", () => {
   it("resolves bundled acpx with pinned version by default", () => {

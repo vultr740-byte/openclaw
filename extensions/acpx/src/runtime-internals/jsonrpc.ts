@@ -1,4 +1,4 @@
-import { isRecord } from "./shared.js";
+import { isRecord } from "./shared.ts";
 
 export type JsonRpcId = string | number | null;
 

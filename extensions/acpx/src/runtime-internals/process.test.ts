@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { createWindowsCmdShimFixture } from "../../../shared/windows-cmd-shim-test-fixtures.js";
-import { resolveSpawnCommand, type SpawnCommandCache } from "./process.js";
+import { resolveSpawnCommand, type SpawnCommandCache } from "./process.ts";
 
 const tempDirs: string[] = [];
 

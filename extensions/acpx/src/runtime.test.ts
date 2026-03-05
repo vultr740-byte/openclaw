@@ -7,8 +7,8 @@ import {
   createMockRuntimeFixture,
   NOOP_LOGGER,
   readMockRuntimeLogEntries,
-} from "./runtime-internals/test-fixtures.js";
-import { AcpxRuntime, decodeAcpxRuntimeHandleState } from "./runtime.js";
+} from "./runtime-internals/test-fixtures.ts";
+import { AcpxRuntime, decodeAcpxRuntimeHandleState } from "./runtime.ts";
 
 let sharedFixture: Awaited<ReturnType<typeof createMockRuntimeFixture>> | null = null;
 let missingCommandRuntime: AcpxRuntime | null = null;

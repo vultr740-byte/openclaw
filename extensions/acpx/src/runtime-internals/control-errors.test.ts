@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseControlJsonError } from "./control-errors.js";
+import { parseControlJsonError } from "./control-errors.ts";
 
 describe("parseControlJsonError", () => {
   it("reads structured control-command errors", () => {

@@ -6,14 +6,14 @@ import {
   getAcpRuntimeBackend,
   requireAcpRuntimeBackend,
 } from "../../../src/acp/runtime/registry.js";
-import { ACPX_BUNDLED_BIN, ACPX_PINNED_VERSION } from "./config.js";
-import { createAcpxRuntimeService } from "./service.js";
+import { ACPX_BUNDLED_BIN, ACPX_PINNED_VERSION } from "./config.ts";
+import { createAcpxRuntimeService } from "./service.ts";
 
 const { ensureAcpxSpy } = vi.hoisted(() => ({
   ensureAcpxSpy: vi.fn(async () => {}),
 }));
 
-vi.mock("./ensure.js", () => ({
+vi.mock("./ensure.ts", () => ({
   ensureAcpx: ensureAcpxSpy,
 }));
 
