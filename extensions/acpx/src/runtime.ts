@@ -12,8 +12,8 @@ import type {
   PluginLogger,
 } from "openclaw/plugin-sdk";
 import { AcpRuntimeError } from "openclaw/plugin-sdk";
-import { type ResolvedAcpxPluginConfig } from "./config.js";
-import { checkAcpxVersion } from "./ensure.js";
+import { type ResolvedAcpxPluginConfig } from "./config.ts";
+import { checkAcpxVersion } from "./ensure.ts";
 import {
   parseJsonLines,
   parsePromptEventLine,

@@ -5,9 +5,9 @@ import type {
   PluginLogger,
 } from "openclaw/plugin-sdk";
 import { registerAcpRuntimeBackend, unregisterAcpRuntimeBackend } from "openclaw/plugin-sdk";
-import { resolveAcpxPluginConfig, type ResolvedAcpxPluginConfig } from "./config.js";
-import { ensureAcpx } from "./ensure.js";
-import { ACPX_BACKEND_ID, AcpxRuntime } from "./runtime.js";
+import { resolveAcpxPluginConfig, type ResolvedAcpxPluginConfig } from "./config.ts";
+import { ensureAcpx } from "./ensure.ts";
+import { ACPX_BACKEND_ID, AcpxRuntime } from "./runtime.ts";
 
 type AcpxRuntimeLike = AcpRuntime & {
   probeAvailability(): Promise<void>;

@@ -1,12 +1,12 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { PluginLogger } from "openclaw/plugin-sdk";
-import { ACPX_PINNED_VERSION, ACPX_PLUGIN_ROOT, buildAcpxLocalInstallCommand } from "./config.js";
+import { ACPX_PINNED_VERSION, ACPX_PLUGIN_ROOT, buildAcpxLocalInstallCommand } from "./config.ts";
 import {
   resolveSpawnFailure,
   type SpawnCommandOptions,
   spawnAndCollect,
-} from "./runtime-internals/process.js";
+} from "./runtime-internals/process.ts";
 
 const SEMVER_PATTERN = /\b\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?\b/;
 
