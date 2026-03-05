@@ -1,6 +1,6 @@
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
-import { createAcpxPluginConfigSchema } from "./src/config.js";
-import { createAcpxRuntimeService } from "./src/service.js";
+import { createAcpxPluginConfigSchema } from "./src/config.ts";
+import { createAcpxRuntimeService } from "./src/service.ts";
 
 const plugin = {
   id: "acpx",
