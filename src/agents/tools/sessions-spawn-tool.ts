@@ -34,6 +34,11 @@ const SessionsSpawnToolSchema = Type.Object({
   mode: optionalStringEnum(SUBAGENT_SPAWN_MODES),
   cleanup: optionalStringEnum(["delete", "keep"] as const),
   sandbox: optionalStringEnum(SESSIONS_SPAWN_SANDBOX_MODES),
+  /**
+   * ACP-only override for whether the initial spawned run auto-delivers to the
+   * requester target when present.
+   */
+  deliverInitialRun: Type.Optional(Type.Boolean()),
 
   // Inline attachments (snapshot-by-value).
   // NOTE: Attachment contents are redacted from transcript persistence by sanitizeToolCallInputs.
@@ -97,6 +102,8 @@ export function createSessionsSpawnTool(opts?: {
       const cleanup =
         params.cleanup === "keep" || params.cleanup === "delete" ? params.cleanup : "keep";
       const sandbox = params.sandbox === "require" ? "require" : "inherit";
+      const deliverInitialRun =
+        typeof params.deliverInitialRun === "boolean" ? params.deliverInitialRun : undefined;
       // Back-compat: older callers used timeoutSeconds for this tool.
       const timeoutSecondsCandidate =
         typeof params.runTimeoutSeconds === "number"
@@ -135,6 +142,7 @@ export function createSessionsSpawnTool(opts?: {
             mode: mode && ACP_SPAWN_MODES.includes(mode) ? mode : undefined,
             thread,
             sandbox,
+            deliverInitialRun,
           },
           {
             agentSessionKey: opts?.agentSessionKey,
@@ -146,6 +154,11 @@ export function createSessionsSpawnTool(opts?: {
           },
         );
         return jsonResult(result);
+      }
+      if (deliverInitialRun !== undefined) {
+        throw new ToolInputError(
+          'sessions_spawn "deliverInitialRun" is supported only when runtime="acp".',
+        );
       }
 
       const result = await spawnSubagentDirect(

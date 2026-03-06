@@ -217,9 +217,12 @@ export async function dispatchReplyFromConfig(params: {
   const shouldRouteToOriginating = Boolean(
     isRoutableChannel(originatingChannel) && originatingTo && originatingChannel !== currentSurface,
   );
+  const shouldRouteAcpToOriginating =
+    shouldRouteToOriginating && cfg.acp?.dispatch?.routeToOriginating !== false;
   const shouldSuppressTyping =
     shouldRouteToOriginating || originatingChannel === INTERNAL_MESSAGE_CHANNEL;
   const ttsChannel = shouldRouteToOriginating ? originatingChannel : currentSurface;
+  const acpTtsChannel = shouldRouteAcpToOriginating ? originatingChannel : currentSurface;
 
   /**
    * Helper to send a payload via route-reply (async).
@@ -331,8 +334,8 @@ export async function dispatchReplyFromConfig(params: {
       sessionKey,
       inboundAudio,
       sessionTtsAuto,
-      ttsChannel,
-      shouldRouteToOriginating,
+      ttsChannel: acpTtsChannel,
+      shouldRouteToOriginating: shouldRouteAcpToOriginating,
       originatingChannel,
       originatingTo,
       shouldSendToolSummaries,

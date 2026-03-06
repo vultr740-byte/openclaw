@@ -116,6 +116,32 @@ describe("sessions_spawn tool", () => {
     expect(hoisted.spawnSubagentDirectMock).not.toHaveBeenCalled();
   });
 
+  it("forwards deliverInitialRun when runtime=acp", async () => {
+    const tool = createSessionsSpawnTool({
+      agentSessionKey: "agent:main:main",
+      agentChannel: "discord",
+      agentAccountId: "default",
+      agentTo: "channel:123",
+      agentThreadId: "456",
+    });
+
+    await tool.execute("call-2a", {
+      runtime: "acp",
+      task: "investigate the failing CI run",
+      agentId: "codex",
+      deliverInitialRun: false,
+    });
+
+    expect(hoisted.spawnAcpDirectMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        deliverInitialRun: false,
+      }),
+      expect.objectContaining({
+        agentSessionKey: "agent:main:main",
+      }),
+    );
+  });
+
   it("forwards ACP sandbox options and requester sandbox context", async () => {
     const tool = createSessionsSpawnTool({
       agentSessionKey: "agent:main:subagent:parent",
@@ -163,5 +189,22 @@ describe("sessions_spawn tool", () => {
     expect(details.error).toContain("attachments are currently unsupported for runtime=acp");
     expect(hoisted.spawnAcpDirectMock).not.toHaveBeenCalled();
     expect(hoisted.spawnSubagentDirectMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects deliverInitialRun when runtime is subagent", async () => {
+    const tool = createSessionsSpawnTool({
+      agentSessionKey: "agent:main:main",
+    });
+
+    await expect(
+      tool.execute("call-4", {
+        task: "build feature",
+        runtime: "subagent",
+        deliverInitialRun: false,
+      }),
+    ).rejects.toThrow('sessions_spawn "deliverInitialRun" is supported only when runtime="acp".');
+
+    expect(hoisted.spawnSubagentDirectMock).not.toHaveBeenCalled();
+    expect(hoisted.spawnAcpDirectMock).not.toHaveBeenCalled();
   });
 });

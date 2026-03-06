@@ -5,7 +5,7 @@ import { NonEmptyString, SessionLabelString } from "./primitives.js";
 export const AgentInternalEventSchema = Type.Object(
   {
     type: Type.Literal("task_completion"),
-    source: Type.String({ enum: ["subagent", "cron"] }),
+    source: Type.String({ enum: ["subagent", "cron", "acp"] }),
     childSessionKey: Type.String(),
     childSessionId: Type.Optional(Type.String()),
     announceType: Type.String(),

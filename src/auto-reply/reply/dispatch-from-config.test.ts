@@ -1236,6 +1236,60 @@ describe("dispatchReplyFromConfig", () => {
     expect(dispatcher.sendFinalReply).not.toHaveBeenCalled();
   });
 
+  it("keeps ACP output on current surface when acp.dispatch.routeToOriginating=false", async () => {
+    setNoAbort();
+    mocks.routeReply.mockClear();
+    const runtime = createAcpRuntime([
+      { type: "text_delta", text: "thread chunk" },
+      { type: "done" },
+    ]);
+    acpMocks.readAcpSessionEntry.mockReturnValue({
+      sessionKey: "agent:codex-acp:session-1",
+      storeSessionKey: "agent:codex-acp:session-1",
+      cfg: {},
+      storePath: "/tmp/mock-sessions.json",
+      entry: {},
+      acp: {
+        backend: "acpx",
+        agent: "codex",
+        runtimeSessionName: "runtime:1",
+        mode: "persistent",
+        state: "idle",
+        lastActivityAt: Date.now(),
+      },
+    });
+    acpMocks.requireAcpRuntimeBackend.mockReturnValue({
+      id: "acpx",
+      runtime,
+    });
+
+    const cfg = {
+      acp: {
+        enabled: true,
+        dispatch: {
+          enabled: true,
+          routeToOriginating: false,
+        },
+        stream: { coalesceIdleMs: 0, maxChunkChars: 128 },
+      },
+    } as OpenClawConfig;
+    const dispatcher = createDispatcher();
+    const ctx = buildTestCtx({
+      Provider: "discord",
+      Surface: "discord",
+      OriginatingChannel: "telegram",
+      OriginatingTo: "telegram:thread-1",
+      SessionKey: "agent:codex-acp:session-1",
+      BodyForAgent: "write a test",
+    });
+
+    await dispatchReplyFromConfig({ ctx, cfg, dispatcher });
+
+    expect(mocks.routeReply).not.toHaveBeenCalled();
+    expect(dispatcher.sendBlockReply).toHaveBeenCalled();
+    expect(dispatcher.sendFinalReply).not.toHaveBeenCalled();
+  });
+
   it("closes oneshot ACP sessions after the turn completes", async () => {
     setNoAbort();
     const runtime = createAcpRuntime([{ type: "done" }]);

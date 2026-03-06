@@ -283,6 +283,154 @@ describe("spawnAcpDirect", () => {
     );
   });
 
+  it("notifies requester session when spawned ACP run completes", async () => {
+    hoisted.callGatewayMock.mockReset().mockImplementation(async (argsUnknown: unknown) => {
+      const args = argsUnknown as { method?: string; params?: Record<string, unknown> };
+      if (args.method === "sessions.patch") {
+        return { ok: true };
+      }
+      if (args.method === "agent.wait") {
+        return { status: "ok" };
+      }
+      if (args.method === "chat.history") {
+        return {
+          messages: [{ role: "assistant", content: "ACP completed with final summary." }],
+        };
+      }
+      if (args.method === "agent") {
+        const sessionKey =
+          typeof args.params?.sessionKey === "string" ? args.params.sessionKey : "";
+        if (sessionKey.startsWith("agent:codex:acp:")) {
+          return { runId: "run-acp-child-1" };
+        }
+        return { runId: "run-requester-notify-1" };
+      }
+      return {};
+    });
+
+    const result = await spawnAcpDirect(
+      {
+        task: "Investigate flaky tests",
+        agentId: "codex",
+        mode: "run",
+      },
+      {
+        agentSessionKey: "agent:main:main",
+      },
+    );
+
+    expect(result.status).toBe("accepted");
+    await vi.waitFor(() => {
+      const requesterNotify = hoisted.callGatewayMock.mock.calls
+        .map((call: unknown[]) => call[0] as { method?: string; params?: Record<string, unknown> })
+        .find(
+          (request) =>
+            request.method === "agent" && request.params?.sessionKey === "agent:main:main",
+        );
+      expect(requesterNotify).toBeDefined();
+    });
+
+    const requesterNotify = hoisted.callGatewayMock.mock.calls
+      .map((call: unknown[]) => call[0] as { method?: string; params?: Record<string, unknown> })
+      .find(
+        (request) => request.method === "agent" && request.params?.sessionKey === "agent:main:main",
+      );
+    expect(requesterNotify?.params?.deliver).toBe(false);
+    expect(requesterNotify?.params?.channel).toBeUndefined();
+    expect(requesterNotify?.params?.to).toBeUndefined();
+    expect(requesterNotify?.params?.message).toContain("A spawned ACP task completed");
+    expect(requesterNotify?.params?.internalEvents).toMatchObject([
+      {
+        type: "task_completion",
+        source: "acp",
+        childSessionKey: result.childSessionKey,
+        announceType: "acp task",
+        taskLabel: "Investigate flaky tests",
+        status: "ok",
+      },
+    ]);
+    const internalEvents = requesterNotify?.params?.internalEvents as
+      | Array<{ replyInstruction?: string }>
+      | undefined;
+    expect(internalEvents?.[0]?.replyInstruction).toContain(
+      "Do not resend duplicate user-facing content",
+    );
+  });
+
+  it("disables initial ACP run delivery when acp.spawn.deliverInitialRun=false", async () => {
+    hoisted.state.cfg = {
+      ...hoisted.state.cfg,
+      acp: {
+        ...hoisted.state.cfg.acp,
+        spawn: {
+          deliverInitialRun: false,
+        },
+      },
+    };
+
+    const result = await spawnAcpDirect(
+      {
+        task: "Investigate flaky tests",
+        agentId: "codex",
+        mode: "session",
+        thread: true,
+      },
+      {
+        agentSessionKey: "agent:main:main",
+        agentChannel: "discord",
+        agentAccountId: "default",
+        agentTo: "channel:parent-channel",
+        agentThreadId: "requester-thread",
+      },
+    );
+
+    expect(result.status).toBe("accepted");
+    const agentCall = hoisted.callGatewayMock.mock.calls
+      .map((call: unknown[]) => call[0] as { method?: string; params?: Record<string, unknown> })
+      .find((request) => request.method === "agent");
+    expect(agentCall?.params?.deliver).toBe(false);
+    expect(agentCall?.params?.channel).toBeUndefined();
+    expect(agentCall?.params?.to).toBeUndefined();
+    expect(agentCall?.params?.threadId).toBeUndefined();
+  });
+
+  it("allows per-call ACP spawn delivery override when config disables initial delivery", async () => {
+    hoisted.state.cfg = {
+      ...hoisted.state.cfg,
+      acp: {
+        ...hoisted.state.cfg.acp,
+        spawn: {
+          deliverInitialRun: false,
+        },
+      },
+    };
+
+    const result = await spawnAcpDirect(
+      {
+        task: "Investigate flaky tests",
+        agentId: "codex",
+        mode: "session",
+        thread: true,
+        deliverInitialRun: true,
+      },
+      {
+        agentSessionKey: "agent:main:main",
+        agentChannel: "discord",
+        agentAccountId: "default",
+        agentTo: "channel:parent-channel",
+        agentThreadId: "requester-thread",
+      },
+    );
+
+    expect(result.status).toBe("accepted");
+    const agentCall = hoisted.callGatewayMock.mock.calls
+      .map((call: unknown[]) => call[0] as { method?: string; params?: Record<string, unknown> })
+      .find((request) => request.method === "agent");
+    expect(agentCall?.params?.deliver).toBe(true);
+    expect(agentCall?.params?.to).toBe("channel:child-thread");
+    expect(agentCall?.params?.threadId).toBe("child-thread");
+  });
+
   it("includes cwd in ACP thread intro banner when provided at spawn time", async () => {
     const result = await spawnAcpDirect(
       {

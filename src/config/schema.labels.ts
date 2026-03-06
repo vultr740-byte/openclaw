@@ -364,6 +364,8 @@ export const FIELD_LABELS: Record<string, string> = {
   acp: "ACP",
   "acp.enabled": "ACP Enabled",
   "acp.dispatch.enabled": "ACP Dispatch Enabled",
+  "acp.dispatch.routeToOriginating": "ACP Route to Originating",
+  "acp.spawn.deliverInitialRun": "ACP Spawn Deliver Initial Run",
   "acp.backend": "ACP Backend",
   "acp.defaultAgent": "ACP Default Agent",
   "acp.allowedAgents": "ACP Allowed Agents",

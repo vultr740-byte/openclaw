@@ -164,6 +164,10 @@ export const FIELD_HELP: Record<string, string> = {
     "Global ACP feature gate. Keep disabled unless ACP runtime + policy are configured.",
   "acp.dispatch.enabled":
     "Independent dispatch gate for ACP session turns (default: true). Set false to keep ACP commands available while blocking ACP turn execution.",
+  "acp.dispatch.routeToOriginating":
+    "When true (default), ACP projected tool/block/final output follows origin routing for cross-channel relays. Set false to keep ACP projected output on the current processing surface.",
+  "acp.spawn.deliverInitialRun":
+    "When true (default), ACP spawn submits the initial run with delivery enabled when requester targets are available. Set false to keep spawn bootstrap runs silent (no auto-post) unless explicitly overridden.",
   "acp.backend":
     "Default ACP runtime backend id (for example: acpx). Must match a registered ACP runtime plugin backend.",
   "acp.defaultAgent":

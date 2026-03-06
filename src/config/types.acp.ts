@@ -3,6 +3,19 @@ import type { AcpSessionUpdateTag } from "../acp/runtime/types.js";
 export type AcpDispatchConfig = {
   /** Master switch for ACP turn dispatch in the reply pipeline. */
   enabled?: boolean;
+  /**
+   * Route ACP projected output to OriginatingChannel/OriginatingTo when the
+   * current processing surface differs (default: true).
+   */
+  routeToOriginating?: boolean;
+};
+
+export type AcpSpawnConfig = {
+  /**
+   * Deliver the initial ACP spawn run back to requester delivery targets when
+   * available (default: true).
+   */
+  deliverInitialRun?: boolean;
 };
 
 export type AcpStreamConfig = {
@@ -38,6 +51,7 @@ export type AcpConfig = {
   /** Global ACP runtime gate. */
   enabled?: boolean;
   dispatch?: AcpDispatchConfig;
+  spawn?: AcpSpawnConfig;
   /** Backend id registered by ACP runtime plugin (for example: acpx). */
   backend?: string;
   defaultAgent?: string;

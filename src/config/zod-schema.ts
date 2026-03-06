@@ -370,6 +370,13 @@ export const OpenClawSchema = z
         dispatch: z
           .object({
             enabled: z.boolean().optional(),
+            routeToOriginating: z.boolean().optional(),
+          })
+          .strict()
+          .optional(),
+        spawn: z
+          .object({
+            deliverInitialRun: z.boolean().optional(),
           })
           .strict()
           .optional(),

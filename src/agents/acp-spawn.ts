@@ -24,6 +24,7 @@ import {
 import { loadConfig } from "../config/config.js";
 import type { OpenClawConfig } from "../config/config.js";
 import { callGateway } from "../gateway/call.js";
+import { logVerbose } from "../globals.js";
 import { resolveConversationIdFromTargets } from "../infra/outbound/conversation-id.js";
 import {
   getSessionBindingService,
@@ -32,7 +33,9 @@ import {
 } from "../infra/outbound/session-binding-service.js";
 import { normalizeAgentId } from "../routing/session-key.js";
 import { normalizeDeliveryContext } from "../utils/delivery-context.js";
+import type { AgentInternalEvent } from "./internal-events.js";
 import { resolveSandboxRuntimeStatus } from "./sandbox/runtime-status.js";
+import { readLatestAssistantReply } from "./tools/agent-step.js";
 
 export const ACP_SPAWN_MODES = ["run", "session"] as const;
 export type SpawnAcpMode = (typeof ACP_SPAWN_MODES)[number];
@@ -47,6 +50,11 @@ export type SpawnAcpParams = {
   mode?: SpawnAcpMode;
   thread?: boolean;
   sandbox?: SpawnAcpSandboxMode;
+  /**
+   * Overrides config `acp.spawn.deliverInitialRun` for this spawn call.
+   * Defaults to config behavior (enabled unless explicitly false).
+   */
+  deliverInitialRun?: boolean;
 };
 
 export type SpawnAcpContext = {
@@ -77,6 +85,11 @@ type PreparedAcpThreadBinding = {
   accountId: string;
   conversationId: string;
 };
+
+const ACP_SPAWN_COMPLETION_WAIT_TIMEOUT_MS = 12 * 60 * 60 * 1000;
+const ACP_SPAWN_COMPLETION_RESULT_MAX_CHARS = 4_000;
+const ACP_SPAWN_COMPLETION_NOTIFY_MESSAGE =
+  "A spawned ACP task completed. Use the internal completion context to continue orchestration, and avoid duplicating user-visible output that ACP already delivered.";
 
 function resolveSpawnMode(params: {
   requestedMode?: SpawnAcpMode;
@@ -130,6 +143,121 @@ function summarizeError(err: unknown): string {
     return err;
   }
   return "error";
+}
+
+function truncateAcpCompletionResult(text: string): string {
+  const normalized = text.trim();
+  if (!normalized) {
+    return "(no output)";
+  }
+  if (normalized.length <= ACP_SPAWN_COMPLETION_RESULT_MAX_CHARS) {
+    return normalized;
+  }
+  return `${normalized.slice(0, ACP_SPAWN_COMPLETION_RESULT_MAX_CHARS)}\n...(truncated)`;
+}
+
+function resolveAcpCompletionStatus(params: { waitStatus?: string; waitError?: string }): {
+  status: "ok" | "timeout" | "error" | "unknown";
+  statusLabel: string;
+} {
+  const waitStatus = params.waitStatus?.trim().toLowerCase();
+  if (waitStatus === "ok") {
+    return { status: "ok", statusLabel: "completed successfully" };
+  }
+  if (waitStatus === "timeout") {
+    return { status: "timeout", statusLabel: "timed out before completion" };
+  }
+  if (waitStatus === "error") {
+    return {
+      status: "error",
+      statusLabel: `failed: ${(params.waitError?.trim() || "unknown error").slice(0, 240)}`,
+    };
+  }
+  return { status: "unknown", statusLabel: "finished with unknown status" };
+}
+
+async function notifyRequesterOnAcpSpawnCompletion(params: {
+  requesterSessionKey?: string;
+  childSessionKey: string;
+  childRunId: string;
+  task: string;
+  label?: string;
+  spawnMode: SpawnAcpMode;
+}) {
+  const requesterSessionKey = params.requesterSessionKey?.trim();
+  if (!requesterSessionKey) {
+    return;
+  }
+
+  let waitStatus: string | undefined;
+  let waitError: string | undefined;
+  try {
+    const wait = await callGateway<{ status?: string; error?: string }>({
+      method: "agent.wait",
+      params: {
+        runId: params.childRunId,
+        timeoutMs: ACP_SPAWN_COMPLETION_WAIT_TIMEOUT_MS,
+      },
+      timeoutMs: ACP_SPAWN_COMPLETION_WAIT_TIMEOUT_MS + 5_000,
+    });
+    waitStatus = typeof wait?.status === "string" ? wait.status : undefined;
+    waitError = typeof wait?.error === "string" ? wait.error : undefined;
+  } catch (err) {
+    waitStatus = "error";
+    waitError = summarizeError(err);
+  }
+
+  let resultText = "(no output)";
+  try {
+    const latestReply = await readLatestAssistantReply({
+      sessionKey: params.childSessionKey,
+      limit: 50,
+    });
+    resultText = truncateAcpCompletionResult(latestReply ?? "");
+  } catch (err) {
+    logVerbose(
+      `acp-spawn: failed to read ACP completion output for ${params.childSessionKey}: ${summarizeError(err)}`,
+    );
+  }
+
+  const completion = resolveAcpCompletionStatus({ waitStatus, waitError });
+  const taskLabel = params.label?.trim() || params.task.trim() || "ACP task";
+  const announceType = params.spawnMode === "session" ? "acp session task" : "acp task";
+  const internalEvent: AgentInternalEvent = {
+    type: "task_completion",
+    source: "acp",
+    childSessionKey: params.childSessionKey,
+    announceType,
+    taskLabel,
+    status: completion.status,
+    statusLabel: completion.statusLabel,
+    result: resultText,
+    replyInstruction:
+      "Treat this as an orchestration state update. The ACP child result may already be posted in the bound chat. Do not resend duplicate user-facing content unless explicitly requested.",
+  };
+
+  try {
+    await callGateway({
+      method: "agent",
+      params: {
+        message: ACP_SPAWN_COMPLETION_NOTIFY_MESSAGE,
+        sessionKey: requesterSessionKey,
+        deliver: false,
+        internalEvents: [internalEvent],
+        inputProvenance: {
+          kind: "inter_session",
+          sourceSessionKey: params.childSessionKey,
+          sourceTool: "sessions_spawn",
+        },
+        idempotencyKey: `acp-spawn-completion:${params.childRunId}`,
+      },
+      timeoutMs: 10_000,
+    });
+  } catch (err) {
+    logVerbose(
+      `acp-spawn: failed to notify requester session ${requesterSessionKey}: ${summarizeError(err)}`,
+    );
+  }
 }
 
 function resolveConversationIdForThreadBinding(params: {
@@ -409,7 +537,10 @@ export async function spawnAcpDirect(
   const inferredDeliveryTo = boundThreadId
     ? `channel:${boundThreadId}`
     : requesterOrigin?.to?.trim() || (deliveryThreadId ? `channel:${deliveryThreadId}` : undefined);
-  const hasDeliveryTarget = Boolean(requesterOrigin?.channel && inferredDeliveryTo);
+  const deliverInitialRunByConfig = cfg.acp?.spawn?.deliverInitialRun !== false;
+  const allowInitialDelivery = params.deliverInitialRun ?? deliverInitialRunByConfig;
+  const hasDeliveryTarget =
+    allowInitialDelivery && Boolean(requesterOrigin?.channel && inferredDeliveryTo);
   const childIdem = crypto.randomUUID();
   let childRunId: string = childIdem;
   try {
@@ -444,6 +575,15 @@ export async function spawnAcpDirect(
       childSessionKey: sessionKey,
     };
   }
+
+  void notifyRequesterOnAcpSpawnCompletion({
+    requesterSessionKey: ctx.agentSessionKey,
+    childSessionKey: sessionKey,
+    childRunId: childRunId,
+    task: params.task,
+    label: params.label,
+    spawnMode,
+  });
 
   return {
     status: "accepted",
