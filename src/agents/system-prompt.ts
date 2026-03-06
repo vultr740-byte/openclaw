@@ -554,6 +554,7 @@ export function buildAgentSystemPrompt(params: {
     "- openclaw gateway start",
     "- openclaw gateway stop",
     "- openclaw gateway restart",
+    "Never run `openclaw gateway run/start/stop/restart` through exec from this agent runtime; use the `gateway` tool for coordinated restarts.",
     "If unsure, ask the user to run `openclaw help` (or `openclaw gateway --help`) and paste the output.",
     "",
     ...skillsSection,

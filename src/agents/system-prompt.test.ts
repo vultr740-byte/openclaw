@@ -197,6 +197,9 @@ describe("buildAgentSystemPrompt", () => {
 
     expect(prompt).toContain("## OpenClaw CLI Quick Reference");
     expect(prompt).toContain("openclaw gateway restart");
+    expect(prompt).toContain(
+      "Never run `openclaw gateway run/start/stop/restart` through exec from this agent runtime; use the `gateway` tool for coordinated restarts.",
+    );
     expect(prompt).toContain("Do not invent commands");
   });
 

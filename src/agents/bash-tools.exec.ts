@@ -43,6 +43,7 @@ import {
   resolveWorkdir,
   truncateMiddle,
 } from "./bash-tools.shared.js";
+import { detectGatewayLifecycleCommand } from "./gateway-lifecycle-command-guard.js";
 import {
   resolveGlobalInstallEnvRedirect,
   rewriteGlobalInstallCommand,
@@ -362,6 +363,19 @@ export function createExecTool(
       }
       if (elevatedRequested) {
         host = "gateway";
+      }
+
+      if (host === "gateway") {
+        const blockedGatewayCommand = detectGatewayLifecycleCommand(effectiveCommand);
+        if (blockedGatewayCommand) {
+          throw new Error(
+            [
+              `Blocked command: openclaw gateway ${blockedGatewayCommand.action}`,
+              "Do not run gateway lifecycle commands through exec in this runtime.",
+              "Use the `gateway` tool (action=restart/config.apply/update.run) so restart stays coordinated.",
+            ].join("\n"),
+          );
+        }
       }
 
       const configuredSecurity = defaults?.security ?? (host === "sandbox" ? "deny" : "allowlist");

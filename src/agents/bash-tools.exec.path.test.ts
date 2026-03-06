@@ -169,6 +169,26 @@ describe("exec PATH login shell merge", () => {
 });
 
 describe("exec host env validation", () => {
+  it("blocks gateway lifecycle commands from exec host=gateway", async () => {
+    const tool = createExecTool({ host: "gateway", security: "full", ask: "off" });
+
+    await expect(
+      tool.execute("call-gateway-restart", {
+        command: "openclaw gateway restart",
+      }),
+    ).rejects.toThrow(
+      /Blocked command: openclaw gateway restart[\s\S]*Use the `gateway` tool \(action=restart\/config\.apply\/update\.run\)/,
+    );
+
+    await expect(
+      tool.execute("call-gateway-restart-chain", {
+        command: "pwd && openclaw gateway restart",
+      }),
+    ).rejects.toThrow(
+      /Blocked command: openclaw gateway restart[\s\S]*Use the `gateway` tool \(action=restart\/config\.apply\/update\.run\)/,
+    );
+  });
+
   it("blocks LD_/DYLD_ env vars on host execution", async () => {
     const tool = createExecTool({ host: "gateway", security: "full", ask: "off" });
 
