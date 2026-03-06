@@ -35,7 +35,7 @@ import { normalizeAgentId } from "../routing/session-key.js";
 import { normalizeDeliveryContext } from "../utils/delivery-context.js";
 import type { AgentInternalEvent } from "./internal-events.js";
 import { resolveSandboxRuntimeStatus } from "./sandbox/runtime-status.js";
-import { readLatestAssistantReply } from "./tools/agent-step.js";
+import { readLatestSessionOutput } from "./tools/session-output.js";
 
 export const ACP_SPAWN_MODES = ["run", "session"] as const;
 export type SpawnAcpMode = (typeof ACP_SPAWN_MODES)[number];
@@ -148,12 +148,27 @@ function summarizeError(err: unknown): string {
 function truncateAcpCompletionResult(text: string): string {
   const normalized = text.trim();
   if (!normalized) {
-    return "(no output)";
+    return "";
   }
   if (normalized.length <= ACP_SPAWN_COMPLETION_RESULT_MAX_CHARS) {
     return normalized;
   }
   return `${normalized.slice(0, ACP_SPAWN_COMPLETION_RESULT_MAX_CHARS)}\n...(truncated)`;
+}
+
+function resolveAcpCompletionResultFallback(
+  status: "ok" | "timeout" | "error" | "unknown",
+): string {
+  if (status === "ok") {
+    return "completed, but no readable output was found in the child session transcript (it may have been delivered directly to chat).";
+  }
+  if (status === "timeout") {
+    return "timed out before a readable child-session output was captured.";
+  }
+  if (status === "error") {
+    return "failed before a readable child-session output was captured.";
+  }
+  return "finished, but no readable child-session output was captured.";
 }
 
 function resolveAcpCompletionStatus(params: { waitStatus?: string; waitError?: string }): {
@@ -207,9 +222,10 @@ async function notifyRequesterOnAcpSpawnCompletion(params: {
     waitError = summarizeError(err);
   }
 
-  let resultText = "(no output)";
+  const completion = resolveAcpCompletionStatus({ waitStatus, waitError });
+  let resultText = "";
   try {
-    const latestReply = await readLatestAssistantReply({
+    const latestReply = await readLatestSessionOutput({
       sessionKey: params.childSessionKey,
       limit: 50,
     });
@@ -219,8 +235,9 @@ async function notifyRequesterOnAcpSpawnCompletion(params: {
       `acp-spawn: failed to read ACP completion output for ${params.childSessionKey}: ${summarizeError(err)}`,
     );
   }
-
-  const completion = resolveAcpCompletionStatus({ waitStatus, waitError });
+  if (!resultText) {
+    resultText = resolveAcpCompletionResultFallback(completion.status);
+  }
   const taskLabel = params.label?.trim() || params.task.trim() || "ACP task";
   const announceType = params.spawnMode === "session" ? "acp session task" : "acp task";
   const internalEvent: AgentInternalEvent = {

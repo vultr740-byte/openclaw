@@ -357,6 +357,129 @@ describe("spawnAcpDirect", () => {
     );
   });
 
+  it("uses toolResult output for ACP completion when assistant transcript is empty", async () => {
+    hoisted.callGatewayMock.mockReset().mockImplementation(async (argsUnknown: unknown) => {
+      const args = argsUnknown as { method?: string; params?: Record<string, unknown> };
+      if (args.method === "sessions.patch") {
+        return { ok: true };
+      }
+      if (args.method === "agent.wait") {
+        return { status: "ok" };
+      }
+      if (args.method === "chat.history") {
+        return {
+          messages: [{ role: "toolResult", content: { output: "Final result from tool output." } }],
+        };
+      }
+      if (args.method === "agent") {
+        const sessionKey =
+          typeof args.params?.sessionKey === "string" ? args.params.sessionKey : "";
+        if (sessionKey.startsWith("agent:codex:acp:")) {
+          return { runId: "run-acp-child-2" };
+        }
+        return { runId: "run-requester-notify-2" };
+      }
+      return {};
+    });
+
+    const result = await spawnAcpDirect(
+      {
+        task: "Investigate flaky tests",
+        agentId: "codex",
+        mode: "run",
+      },
+      {
+        agentSessionKey: "agent:main:main",
+      },
+    );
+
+    expect(result.status).toBe("accepted");
+    await vi.waitFor(() => {
+      const requesterNotify = hoisted.callGatewayMock.mock.calls
+        .map((call: unknown[]) => call[0] as { method?: string; params?: Record<string, unknown> })
+        .find(
+          (request) =>
+            request.method === "agent" && request.params?.sessionKey === "agent:main:main",
+        );
+      expect(requesterNotify).toBeDefined();
+    });
+
+    const requesterNotify = hoisted.callGatewayMock.mock.calls
+      .map((call: unknown[]) => call[0] as { method?: string; params?: Record<string, unknown> })
+      .find(
+        (request) => request.method === "agent" && request.params?.sessionKey === "agent:main:main",
+      );
+    expect(requesterNotify?.params?.internalEvents).toMatchObject([
+      {
+        type: "task_completion",
+        source: "acp",
+        status: "ok",
+        result: "Final result from tool output.",
+      },
+    ]);
+  });
+
+  it("uses status fallback when ACP completion output cannot be read", async () => {
+    hoisted.callGatewayMock.mockReset().mockImplementation(async (argsUnknown: unknown) => {
+      const args = argsUnknown as { method?: string; params?: Record<string, unknown> };
+      if (args.method === "sessions.patch") {
+        return { ok: true };
+      }
+      if (args.method === "agent.wait") {
+        return { status: "ok" };
+      }
+      if (args.method === "chat.history") {
+        return { messages: [] };
+      }
+      if (args.method === "agent") {
+        const sessionKey =
+          typeof args.params?.sessionKey === "string" ? args.params.sessionKey : "";
+        if (sessionKey.startsWith("agent:codex:acp:")) {
+          return { runId: "run-acp-child-3" };
+        }
+        return { runId: "run-requester-notify-3" };
+      }
+      return {};
+    });
+
+    const result = await spawnAcpDirect(
+      {
+        task: "Investigate flaky tests",
+        agentId: "codex",
+        mode: "run",
+      },
+      {
+        agentSessionKey: "agent:main:main",
+      },
+    );
+
+    expect(result.status).toBe("accepted");
+    await vi.waitFor(() => {
+      const requesterNotify = hoisted.callGatewayMock.mock.calls
+        .map((call: unknown[]) => call[0] as { method?: string; params?: Record<string, unknown> })
+        .find(
+          (request) =>
+            request.method === "agent" && request.params?.sessionKey === "agent:main:main",
+        );
+      expect(requesterNotify).toBeDefined();
+    });
+
+    const requesterNotify = hoisted.callGatewayMock.mock.calls
+      .map((call: unknown[]) => call[0] as { method?: string; params?: Record<string, unknown> })
+      .find(
+        (request) => request.method === "agent" && request.params?.sessionKey === "agent:main:main",
+      );
+    expect(requesterNotify?.params?.internalEvents).toMatchObject([
+      {
+        type: "task_completion",
+        source: "acp",
+        status: "ok",
+        result:
+          "completed, but no readable output was found in the child session transcript (it may have been delivered directly to chat).",
+      },
+    ]);
+  });
+
   it("disables initial ACP run delivery when acp.spawn.deliverInitialRun=false", async () => {
     hoisted.state.cfg = {
       ...hoisted.state.cfg,
