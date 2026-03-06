@@ -26,6 +26,7 @@ function createDefaultSpawnConfig(): OpenClawConfig {
 
 const hoisted = vi.hoisted(() => {
   const callGatewayMock = vi.fn();
+  const agentEventListeners = new Set<(evt: unknown) => void>();
   const sessionBindingCapabilitiesMock = vi.fn();
   const sessionBindingBindMock = vi.fn();
   const sessionBindingUnbindMock = vi.fn();
@@ -38,6 +39,7 @@ const hoisted = vi.hoisted(() => {
   };
   return {
     callGatewayMock,
+    agentEventListeners,
     sessionBindingCapabilitiesMock,
     sessionBindingBindMock,
     sessionBindingUnbindMock,
@@ -82,6 +84,15 @@ vi.mock("../gateway/call.js", () => ({
   callGateway: (opts: unknown) => hoisted.callGatewayMock(opts),
 }));
 
+vi.mock("../infra/agent-events.js", () => ({
+  onAgentEvent: (listener: (evt: unknown) => void) => {
+    hoisted.agentEventListeners.add(listener);
+    return () => {
+      hoisted.agentEventListeners.delete(listener);
+    };
+  },
+}));
+
 vi.mock("../acp/control-plane/manager.js", () => {
   return {
     getAcpSessionManager: () => ({
@@ -101,6 +112,12 @@ vi.mock("../infra/outbound/session-binding-service.js", async (importOriginal) =
 });
 
 const { spawnAcpDirect } = await import("./acp-spawn.js");
+
+function emitAgentEvent(event: { runId: string; stream: string; data: Record<string, unknown> }) {
+  for (const listener of hoisted.agentEventListeners) {
+    listener(event);
+  }
+}
 
 function createSessionBindingCapabilities() {
   return {
@@ -147,6 +164,7 @@ function expectResolvedIntroTextInBindMetadata(): void {
 describe("spawnAcpDirect", () => {
   beforeEach(() => {
     hoisted.state.cfg = createDefaultSpawnConfig();
+    hoisted.agentEventListeners.clear();
 
     hoisted.callGatewayMock.mockReset().mockImplementation(async (argsUnknown: unknown) => {
       const args = argsUnknown as { method?: string };
@@ -355,6 +373,77 @@ describe("spawnAcpDirect", () => {
     expect(internalEvents?.[0]?.replyInstruction).toContain(
       "Do not resend duplicate user-facing content",
     );
+  });
+
+  it("prefers ACP run event output over transcript fallback", async () => {
+    hoisted.callGatewayMock.mockReset().mockImplementation(async (argsUnknown: unknown) => {
+      const args = argsUnknown as { method?: string; params?: Record<string, unknown> };
+      if (args.method === "sessions.patch") {
+        return { ok: true };
+      }
+      if (args.method === "agent.wait") {
+        emitAgentEvent({
+          runId: "run-acp-child-events-1",
+          stream: "assistant",
+          data: {
+            text: "ACP event stream summary.",
+          },
+        });
+        return { status: "ok" };
+      }
+      if (args.method === "chat.history") {
+        return { messages: [] };
+      }
+      if (args.method === "agent") {
+        const sessionKey =
+          typeof args.params?.sessionKey === "string" ? args.params.sessionKey : "";
+        if (sessionKey.startsWith("agent:codex:acp:")) {
+          return { runId: "run-acp-child-events-1" };
+        }
+        return { runId: "run-requester-notify-events-1" };
+      }
+      return {};
+    });
+
+    const result = await spawnAcpDirect(
+      {
+        task: "Investigate flaky tests",
+        agentId: "codex",
+        mode: "run",
+      },
+      {
+        agentSessionKey: "agent:main:main",
+      },
+    );
+
+    expect(result.status).toBe("accepted");
+    await vi.waitFor(() => {
+      const requesterNotify = hoisted.callGatewayMock.mock.calls
+        .map((call: unknown[]) => call[0] as { method?: string; params?: Record<string, unknown> })
+        .find(
+          (request) =>
+            request.method === "agent" && request.params?.sessionKey === "agent:main:main",
+        );
+      expect(requesterNotify).toBeDefined();
+    });
+
+    const requesterNotify = hoisted.callGatewayMock.mock.calls
+      .map((call: unknown[]) => call[0] as { method?: string; params?: Record<string, unknown> })
+      .find(
+        (request) => request.method === "agent" && request.params?.sessionKey === "agent:main:main",
+      );
+    expect(requesterNotify?.params?.internalEvents).toMatchObject([
+      {
+        type: "task_completion",
+        source: "acp",
+        status: "ok",
+        result: "ACP event stream summary.",
+      },
+    ]);
+    const historyCalls = hoisted.callGatewayMock.mock.calls
+      .map((call: unknown[]) => call[0] as { method?: string })
+      .filter((request) => request.method === "chat.history");
+    expect(historyCalls).toHaveLength(0);
   });
 
   it("uses toolResult output for ACP completion when assistant transcript is empty", async () => {
