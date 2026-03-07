@@ -23,7 +23,29 @@ const ConfigApplyLikeParamsSchema = Type.Object(
 );
 
 export const ConfigApplyParamsSchema = ConfigApplyLikeParamsSchema;
-export const ConfigPatchParamsSchema = ConfigApplyLikeParamsSchema;
+
+export const ConfigPatchRemoveByIdOpSchema = Type.Object(
+  {
+    op: Type.Literal("removeById"),
+    path: NonEmptyString,
+    id: NonEmptyString,
+  },
+  { additionalProperties: false },
+);
+
+const ConfigPatchOpsSchema = Type.Array(ConfigPatchRemoveByIdOpSchema, { minItems: 1 });
+
+export const ConfigPatchParamsSchema = Type.Object(
+  {
+    raw: Type.Optional(NonEmptyString),
+    ops: Type.Optional(ConfigPatchOpsSchema),
+    baseHash: Type.Optional(NonEmptyString),
+    sessionKey: Type.Optional(Type.String()),
+    note: Type.Optional(Type.String()),
+    restartDelayMs: Type.Optional(Type.Integer({ minimum: 0 })),
+  },
+  { additionalProperties: false },
+);
 
 export const ConfigSchemaParamsSchema = Type.Object({}, { additionalProperties: false });
 

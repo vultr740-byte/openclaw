@@ -46,13 +46,56 @@ async function resetTempDir(name: string): Promise<string> {
   return dir;
 }
 
+async function readConfigHash(): Promise<string> {
+  const snapshot = await rpcReq<{ hash?: string }>(requireWs(), "config.get", {});
+  expect(snapshot.ok).toBe(true);
+  const hash = snapshot.payload?.hash;
+  expect(typeof hash).toBe("string");
+  return hash as string;
+}
+
 describe("gateway config methods", () => {
-  it("rejects config.patch when raw is not an object", async () => {
+  it("supports config.patch ops removeById without raw", async () => {
+    const baseHash = await readConfigHash();
+    const seeded = await rpcReq<{ ok?: boolean }>(requireWs(), "config.apply", {
+      baseHash,
+      raw: JSON.stringify(
+        {
+          agents: {
+            list: [{ id: "home", default: true }, { id: "ops-xhot-grok" }],
+          },
+        },
+        null,
+        2,
+      ),
+    });
+    expect(seeded.ok).toBe(true);
+
+    const patchHash = await readConfigHash();
+    const res = await rpcReq<{
+      config?: { agents?: { list?: Array<{ id: string }> } };
+      patch?: { ops?: { total?: number; removed?: number; missing?: number } };
+    }>(requireWs(), "config.patch", {
+      baseHash: patchHash,
+      ops: [{ op: "removeById", path: "agents.list", id: "ops-xhot-grok" }],
+    });
+    expect(res.ok).toBe(true);
+    expect(res.payload?.config?.agents?.list?.map((entry) => entry.id)).toEqual(["home"]);
+    expect(res.payload?.patch?.ops).toMatchObject({
+      total: 1,
+      removed: 1,
+      missing: 0,
+    });
+  });
+
+  it("rejects config.patch ops with invalid path", async () => {
+    const patchHash = await readConfigHash();
     const res = await rpcReq<{ ok?: boolean }>(requireWs(), "config.patch", {
-      raw: "[]",
+      baseHash: patchHash,
+      ops: [{ op: "removeById", path: "agents.missing", id: "home" }],
     });
     expect(res.ok).toBe(false);
-    expect(res.error?.message ?? "").toContain("raw must be an object");
+    expect(res.error?.message ?? "").toContain('path "agents.missing" not found');
   });
 });
 

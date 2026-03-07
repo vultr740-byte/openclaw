@@ -138,6 +138,45 @@ describe("gateway tool", () => {
     });
   });
 
+  it("passes config.patch ops through gateway call", async () => {
+    const { callGatewayTool } = await import("./tools/gateway.js");
+    const sessionKey = "agent:main:whatsapp:dm:+15555550123";
+    const tool = requireGatewayTool(sessionKey);
+    const ops = [{ op: "removeById", path: "agents.list", id: "ops-xhot-grok" }];
+
+    await tool.execute("call4b", {
+      action: "config.patch",
+      ops,
+    });
+
+    expect(callGatewayTool).toHaveBeenCalledWith("config.get", expect.any(Object), {});
+    const patchCall = vi
+      .mocked(callGatewayTool)
+      .mock.calls.filter((call) => call[0] === "config.patch")
+      .at(-1);
+    expect(patchCall).toBeDefined();
+    if (patchCall) {
+      const [, , patchParams] = patchCall;
+      expect(patchParams).toMatchObject({
+        baseHash: "hash-1",
+        sessionKey,
+        ops,
+      });
+      expect(patchParams).not.toHaveProperty("raw");
+    }
+  });
+
+  it("rejects config.patch without raw and ops", async () => {
+    const sessionKey = "agent:main:whatsapp:dm:+15555550123";
+    const tool = requireGatewayTool(sessionKey);
+
+    await expect(
+      tool.execute("call4c", {
+        action: "config.patch",
+      }),
+    ).rejects.toThrow("config.patch requires raw or ops");
+  });
+
   it("passes update.run through gateway call", async () => {
     const { callGatewayTool } = await import("./tools/gateway.js");
     const sessionKey = "agent:main:whatsapp:dm:+15555550123";

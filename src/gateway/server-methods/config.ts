@@ -27,6 +27,7 @@ import {
 } from "../../infra/restart-sentinel.js";
 import { scheduleGatewaySigusr1Restart } from "../../infra/restart.js";
 import { loadOpenClawPlugins } from "../../plugins/loader.js";
+import { isPlainObject } from "../../utils.js";
 import { diffConfigPaths } from "../config-reload.js";
 import {
   formatControlPlaneActor,
@@ -46,6 +47,28 @@ import { resolveBaseHashParam } from "./base-hash.js";
 import { parseRestartRequestParams } from "./restart-request.js";
 import type { GatewayRequestHandlers, RespondFn } from "./types.js";
 import { assertValidParams } from "./validation.js";
+
+type ConfigPatchRemoveByIdOp = {
+  op: "removeById";
+  path: string;
+  id: string;
+};
+
+type ConfigPatchOp = ConfigPatchRemoveByIdOp;
+
+type ConfigPatchOpSummaryEntry = {
+  op: ConfigPatchOp["op"];
+  path: string;
+  id: string;
+  removed: boolean;
+};
+
+type ConfigPatchOpsSummary = {
+  total: number;
+  removed: number;
+  missing: number;
+  details: ConfigPatchOpSummaryEntry[];
+};
 
 function requireConfigBaseHash(
   params: unknown,
@@ -150,6 +173,184 @@ function parseValidateConfigFromRawOrRespond(
     return null;
   }
   return { config: validated.config, schema };
+}
+
+function parseConfigPatchRawObjectOrRespond(
+  params: unknown,
+  respond: RespondFn,
+): Record<string, unknown> | null {
+  const rawValue = (params as { raw?: unknown }).raw;
+  if (rawValue === undefined) {
+    return {};
+  }
+  if (typeof rawValue !== "string") {
+    respond(
+      false,
+      undefined,
+      errorShape(
+        ErrorCodes.INVALID_REQUEST,
+        "invalid config.patch params: raw (string) required when provided",
+      ),
+    );
+    return null;
+  }
+  const parsedRes = parseConfigJson5(rawValue);
+  if (!parsedRes.ok) {
+    respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, parsedRes.error));
+    return null;
+  }
+  if (!isPlainObject(parsedRes.parsed)) {
+    respond(
+      false,
+      undefined,
+      errorShape(ErrorCodes.INVALID_REQUEST, "config.patch raw must be an object"),
+    );
+    return null;
+  }
+  return parsedRes.parsed;
+}
+
+function parseConfigPatchOpsOrRespond(params: unknown, respond: RespondFn): ConfigPatchOp[] | null {
+  const opsValue = (params as { ops?: unknown }).ops;
+  if (opsValue === undefined) {
+    return [];
+  }
+  if (!Array.isArray(opsValue)) {
+    respond(
+      false,
+      undefined,
+      errorShape(ErrorCodes.INVALID_REQUEST, "config.patch ops must be an array"),
+    );
+    return null;
+  }
+  const parsedOps: ConfigPatchOp[] = [];
+  for (const [index, candidate] of opsValue.entries()) {
+    if (!isPlainObject(candidate)) {
+      respond(
+        false,
+        undefined,
+        errorShape(
+          ErrorCodes.INVALID_REQUEST,
+          `config.patch ops[${index}] must be an object with op/path/id`,
+        ),
+      );
+      return null;
+    }
+    const op = typeof candidate.op === "string" ? candidate.op.trim() : "";
+    const path = typeof candidate.path === "string" ? candidate.path.trim() : "";
+    const id = typeof candidate.id === "string" ? candidate.id.trim() : "";
+    if (op !== "removeById" || !path || !id) {
+      respond(
+        false,
+        undefined,
+        errorShape(
+          ErrorCodes.INVALID_REQUEST,
+          `config.patch ops[${index}] requires { op: "removeById", path, id }`,
+        ),
+      );
+      return null;
+    }
+    parsedOps.push({ op: "removeById", path, id });
+  }
+  return parsedOps;
+}
+
+function splitConfigPath(pathValue: string): string[] {
+  return pathValue
+    .split(".")
+    .map((segment) => segment.trim())
+    .filter((segment) => segment.length > 0);
+}
+
+function applyConfigPatchOps(
+  config: OpenClawConfig,
+  ops: ConfigPatchOp[],
+):
+  | { ok: true; config: OpenClawConfig; summary: ConfigPatchOpsSummary }
+  | { ok: false; error: string } {
+  const result = structuredClone(config);
+  const details: ConfigPatchOpSummaryEntry[] = [];
+  let removed = 0;
+
+  for (const [index, op] of ops.entries()) {
+    const segments = splitConfigPath(op.path);
+    if (segments.length === 0) {
+      return {
+        ok: false,
+        error: `config.patch ops[${index}] path must be non-empty`,
+      };
+    }
+
+    const parentSegments = segments.slice(0, -1);
+    const leafKey = segments.at(-1);
+    if (!leafKey) {
+      return {
+        ok: false,
+        error: `config.patch ops[${index}] path must be non-empty`,
+      };
+    }
+
+    let cursor: unknown = result;
+    for (const segment of parentSegments) {
+      if (!isPlainObject(cursor)) {
+        return {
+          ok: false,
+          error: `config.patch ops[${index}] path "${op.path}" is invalid at "${segment}"`,
+        };
+      }
+      if (!Object.hasOwn(cursor, segment)) {
+        return {
+          ok: false,
+          error: `config.patch ops[${index}] path "${op.path}" not found`,
+        };
+      }
+      cursor = cursor[segment];
+    }
+
+    if (!isPlainObject(cursor) || !Object.hasOwn(cursor, leafKey)) {
+      return {
+        ok: false,
+        error: `config.patch ops[${index}] path "${op.path}" not found`,
+      };
+    }
+
+    const target = cursor[leafKey];
+    if (!Array.isArray(target)) {
+      return {
+        ok: false,
+        error: `config.patch ops[${index}] path "${op.path}" must point to an array`,
+      };
+    }
+
+    const filtered = target.filter((entry) => {
+      if (!isPlainObject(entry)) {
+        return true;
+      }
+      return entry.id !== op.id;
+    });
+    const opRemoved = filtered.length < target.length;
+    if (opRemoved) {
+      removed += 1;
+      cursor[leafKey] = filtered;
+    }
+    details.push({
+      op: "removeById",
+      path: op.path,
+      id: op.id,
+      removed: opRemoved,
+    });
+  }
+
+  return {
+    ok: true,
+    config: result,
+    summary: {
+      total: details.length,
+      removed,
+      missing: details.length - removed,
+      details,
+    },
+  };
 }
 
 function resolveConfigRestartRequest(params: unknown): {
@@ -297,40 +498,41 @@ export const configHandlers: GatewayRequestHandlers = {
       );
       return;
     }
-    const rawValue = (params as { raw?: unknown }).raw;
-    if (typeof rawValue !== "string") {
+    const patchObject = parseConfigPatchRawObjectOrRespond(params, respond);
+    if (!patchObject) {
+      return;
+    }
+    const patchOps = parseConfigPatchOpsOrRespond(params, respond);
+    if (!patchOps) {
+      return;
+    }
+    if ((params as { raw?: unknown }).raw === undefined && patchOps.length === 0) {
       respond(
         false,
         undefined,
         errorShape(
           ErrorCodes.INVALID_REQUEST,
-          "invalid config.patch params: raw (string) required",
+          "config.patch requires either raw (object string) or ops",
         ),
       );
       return;
     }
-    const parsedRes = parseConfigJson5(rawValue);
-    if (!parsedRes.ok) {
-      respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, parsedRes.error));
-      return;
-    }
-    if (
-      !parsedRes.parsed ||
-      typeof parsedRes.parsed !== "object" ||
-      Array.isArray(parsedRes.parsed)
-    ) {
-      respond(
-        false,
-        undefined,
-        errorShape(ErrorCodes.INVALID_REQUEST, "config.patch raw must be an object"),
-      );
-      return;
-    }
-    const merged = applyMergePatch(snapshot.config, parsedRes.parsed, {
+    const merged = applyMergePatch(snapshot.config, patchObject, {
       mergeObjectArraysById: true,
     });
+    let mergedConfig = merged as OpenClawConfig;
+    let patchOpsSummary: ConfigPatchOpsSummary | undefined;
+    if (patchOps.length > 0) {
+      const opsResult = applyConfigPatchOps(mergedConfig, patchOps);
+      if (!opsResult.ok) {
+        respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, opsResult.error));
+        return;
+      }
+      mergedConfig = opsResult.config;
+      patchOpsSummary = opsResult.summary;
+    }
     const schemaPatch = loadSchemaWithPlugins();
-    const restoredMerge = restoreRedactedValues(merged, snapshot.config, schemaPatch.uiHints);
+    const restoredMerge = restoreRedactedValues(mergedConfig, snapshot.config, schemaPatch.uiHints);
     if (!restoredMerge.ok) {
       respond(
         false,
@@ -399,6 +601,7 @@ export const configHandlers: GatewayRequestHandlers = {
           path: sentinelPath,
           payload,
         },
+        patch: patchOpsSummary ? { ops: patchOpsSummary } : undefined,
       },
       undefined,
     );
