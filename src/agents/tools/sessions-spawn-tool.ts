@@ -75,7 +75,7 @@ export function createSessionsSpawnTool(opts?: {
   /** Explicit agent ID override for cron/hook sessions where session key parsing may not work. */
   requesterAgentIdOverride?: string;
 }): AnyAgentTool {
-  const withWarnings = <T>(payload: T, warnings: string[]): T | (T & { warnings: string[] }) => {
+  const withWarnings = (payload: unknown, warnings: string[]): unknown => {
     if (warnings.length === 0) {
       return payload;
     }
@@ -83,7 +83,7 @@ export function createSessionsSpawnTool(opts?: {
       return {
         payload,
         warnings,
-      } as T & { warnings: string[] };
+      };
     }
     const existingWarningsRaw = (payload as Record<string, unknown>).warnings;
     const existingWarnings = Array.isArray(existingWarningsRaw)
@@ -92,7 +92,7 @@ export function createSessionsSpawnTool(opts?: {
     return {
       ...(payload as Record<string, unknown>),
       warnings: [...existingWarnings, ...warnings],
-    } as T & { warnings: string[] };
+    };
   };
 
   return {
