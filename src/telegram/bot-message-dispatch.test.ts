@@ -1262,9 +1262,12 @@ describe("dispatchTelegramMessage draft streaming", () => {
     );
   });
 
-  it("reuses matching preview for final error payload without duplicate send", async () => {
+  it("replaces matching preview for final error payload without duplicate send", async () => {
     const draftStream = createDraftStream(999);
     createTelegramDraftStream.mockReturnValue(draftStream);
+    const deleteMessage = vi.fn().mockResolvedValue(true);
+    const bot = createBot();
+    bot.api.deleteMessage = deleteMessage;
     dispatchReplyWithBufferedBlockDispatcher.mockImplementation(
       async ({ dispatcherOptions, replyOptions }) => {
         const matchingText = "⚠️ Tool failed";
@@ -1275,10 +1278,16 @@ describe("dispatchTelegramMessage draft streaming", () => {
     );
     deliverReplies.mockResolvedValue({ delivered: true });
 
-    await dispatchWithContext({ context: createContext(), streamMode: "partial" });
+    await dispatchWithContext({ context: createContext(), streamMode: "partial", bot });
 
     expect(editMessageTelegram).not.toHaveBeenCalled();
-    expect(deliverReplies).not.toHaveBeenCalled();
+    expect(deliverReplies).toHaveBeenCalledTimes(1);
+    expect(deliverReplies).toHaveBeenCalledWith(
+      expect.objectContaining({
+        replies: [expect.objectContaining({ text: "⚠️ Tool failed", isError: true })],
+      }),
+    );
+    expect(deleteMessage).toHaveBeenCalledWith(123, 999);
     expect(draftStream.clear).not.toHaveBeenCalled();
     expect(draftStream.stop).toHaveBeenCalled();
   });

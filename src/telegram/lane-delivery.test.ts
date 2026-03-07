@@ -65,6 +65,7 @@ function createHarness(params?: {
     flushDraftLane,
     stopDraftLane,
     editPreview,
+    deletePreviewMessage,
     log,
     markDelivered,
   };
@@ -201,5 +202,47 @@ describe("createLaneTextDeliverer", () => {
     expect(harness.editPreview).not.toHaveBeenCalled();
     expect(harness.sendPayload).toHaveBeenCalledWith(expect.objectContaining({ text: longText }));
     expect(harness.log).toHaveBeenCalledWith(expect.stringContaining("preview final too long"));
+  });
+
+  it("replaces matching error preview with a standard final send", async () => {
+    const harness = createHarness({ answerMessageId: 888 });
+    const matchingText = "⚠️ tool failed";
+    harness.lanes.answer.lastPartialText = matchingText;
+
+    const result = await harness.deliverLaneText({
+      laneName: "answer",
+      text: matchingText,
+      payload: { text: matchingText, isError: true },
+      infoKind: "final",
+    });
+
+    expect(result).toBe("sent");
+    expect(harness.stopDraftLane).toHaveBeenCalledTimes(1);
+    expect(harness.deletePreviewMessage).toHaveBeenCalledWith(888);
+    expect(harness.sendPayload).toHaveBeenCalledWith(
+      expect.objectContaining({ text: matchingText, isError: true }),
+    );
+    expect(harness.markDelivered).not.toHaveBeenCalled();
+  });
+
+  it("reuses matching error preview when preview deletion fails", async () => {
+    const harness = createHarness({ answerMessageId: 888 });
+    const matchingText = "⚠️ tool failed";
+    harness.lanes.answer.lastPartialText = matchingText;
+    harness.deletePreviewMessage.mockRejectedValue(new Error("403 delete denied"));
+
+    const result = await harness.deliverLaneText({
+      laneName: "answer",
+      text: matchingText,
+      payload: { text: matchingText, isError: true },
+      infoKind: "final",
+    });
+
+    expect(result).toBe("preview-finalized");
+    expect(harness.sendPayload).not.toHaveBeenCalled();
+    expect(harness.markDelivered).toHaveBeenCalledTimes(1);
+    expect(harness.log).toHaveBeenCalledWith(
+      expect.stringContaining("matching error preview delete failed"),
+    );
   });
 });
