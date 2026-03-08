@@ -1262,27 +1262,6 @@ describe("dispatchTelegramMessage draft streaming", () => {
     );
   });
 
-  it("reuses matching preview for final error payload without duplicate send", async () => {
-    const draftStream = createDraftStream(999);
-    createTelegramDraftStream.mockReturnValue(draftStream);
-    dispatchReplyWithBufferedBlockDispatcher.mockImplementation(
-      async ({ dispatcherOptions, replyOptions }) => {
-        const matchingText = "⚠️ Tool failed";
-        await replyOptions?.onPartialReply?.({ text: matchingText });
-        await dispatcherOptions.deliver({ text: matchingText, isError: true }, { kind: "final" });
-        return { queuedFinal: true };
-      },
-    );
-    deliverReplies.mockResolvedValue({ delivered: true });
-
-    await dispatchWithContext({ context: createContext(), streamMode: "partial" });
-
-    expect(editMessageTelegram).not.toHaveBeenCalled();
-    expect(deliverReplies).not.toHaveBeenCalled();
-    expect(draftStream.clear).not.toHaveBeenCalled();
-    expect(draftStream.stop).toHaveBeenCalled();
-  });
-
   it("clears preview for error-only finals", async () => {
     const draftStream = createDraftStream(999);
     createTelegramDraftStream.mockReturnValue(draftStream);

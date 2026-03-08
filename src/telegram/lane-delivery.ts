@@ -372,20 +372,6 @@ export function createLaneTextDeliverer(params: CreateLaneTextDelivererParams) {
           `telegram: preview final too long for edit (${text.length} > ${params.draftMaxChars}); falling back to standard send`,
         );
       }
-      const previewMessageId = lane.stream?.messageId();
-      const reuseMatchingErrorPreview =
-        payload.isError === true &&
-        !hasMedia &&
-        text.length > 0 &&
-        !params.finalizedPreviewByLane[laneName] &&
-        typeof previewMessageId === "number" &&
-        lane.lastPartialText === text;
-      if (reuseMatchingErrorPreview) {
-        await params.stopDraftLane(lane);
-        params.finalizedPreviewByLane[laneName] = true;
-        params.markDelivered();
-        return "preview-finalized";
-      }
       await params.stopDraftLane(lane);
       const delivered = await params.sendPayload(params.applyTextToPayload(payload, text));
       return delivered ? "sent" : "skipped";
