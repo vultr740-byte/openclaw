@@ -42,6 +42,7 @@ const GATEWAY_ACTIONS = [
   "restart",
   "config.get",
   "config.schema",
+  "config.schema.lookup",
   "config.apply",
   "config.patch",
   "update.run",
@@ -55,10 +56,12 @@ const GatewayToolSchema = Type.Object({
   // restart
   delayMs: Type.Optional(Type.Number()),
   reason: Type.Optional(Type.String()),
-  // config.get, config.schema, config.apply, update.run
+  // config.get, config.schema, config.schema.lookup, config.apply, update.run
   gatewayUrl: Type.Optional(Type.String()),
   gatewayToken: Type.Optional(Type.String()),
   timeoutMs: Type.Optional(Type.Number()),
+  // config.schema.lookup
+  path: Type.Optional(Type.String()),
   // config.apply, config.patch
   raw: Type.Optional(Type.String()),
   ops: Type.Optional(
@@ -94,7 +97,7 @@ export function createGatewayTool(opts?: {
     name: "gateway",
     ownerOnly: true,
     description:
-      "Restart, apply config, or update the gateway in-place (SIGUSR1). Use config.patch for safe partial config updates (merges with existing), including optional removeById ops for array entries. Use config.apply only when replacing entire config. Both trigger restart after writing. Always pass a human-readable completion message via the `note` parameter so the system can deliver it to the user after restart.",
+      "Restart, inspect config schema paths, apply config, or update the gateway in-place (SIGUSR1). Use config.schema.lookup with a targeted dot path before config edits. Use config.patch for safe partial config updates (merges with existing), including optional removeById ops for array entries. Use config.apply only when replacing entire config. Both trigger restart after writing. Always pass a human-readable completion message via the `note` parameter so the system can deliver it to the user after restart.",
     parameters: GatewayToolSchema,
     execute: async (_toolCallId, args) => {
       const params = args as Record<string, unknown>;
@@ -242,7 +245,17 @@ export function createGatewayTool(opts?: {
         return jsonResult({ ok: true, result });
       }
       if (action === "config.schema") {
+        const path = readStringParam(params, "path");
+        if (path) {
+          const result = await callGatewayTool("config.schema.lookup", gatewayOpts, { path });
+          return jsonResult({ ok: true, result });
+        }
         const result = await callGatewayTool("config.schema", gatewayOpts, {});
+        return jsonResult({ ok: true, result });
+      }
+      if (action === "config.schema.lookup") {
+        const path = readStringParam(params, "path", { required: true, label: "path" });
+        const result = await callGatewayTool("config.schema.lookup", gatewayOpts, { path });
         return jsonResult({ ok: true, result });
       }
       if (action === "config.apply") {

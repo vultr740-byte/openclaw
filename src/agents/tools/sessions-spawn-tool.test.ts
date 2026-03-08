@@ -16,6 +16,7 @@ vi.mock("../subagent-spawn.js", () => ({
 
 vi.mock("../acp-spawn.js", () => ({
   ACP_SPAWN_MODES: ["run", "session"],
+  ACP_SPAWN_STREAM_TARGETS: ["parent"],
   spawnAcpDirect: (...args: unknown[]) => hoisted.spawnAcpDirectMock(...args),
 }));
 
@@ -142,6 +143,27 @@ describe("sessions_spawn tool", () => {
     );
   });
 
+  it('forwards streamTo when runtime="acp"', async () => {
+    const tool = createSessionsSpawnTool({
+      agentSessionKey: "agent:main:main",
+    });
+
+    await tool.execute("call-2a-stream", {
+      runtime: "acp",
+      task: "investigate the failing CI run",
+      streamTo: "parent",
+    });
+
+    expect(hoisted.spawnAcpDirectMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        streamTo: "parent",
+      }),
+      expect.objectContaining({
+        agentSessionKey: "agent:main:main",
+      }),
+    );
+  });
+
   it("forwards ACP sandbox options and requester sandbox context", async () => {
     const tool = createSessionsSpawnTool({
       agentSessionKey: "agent:main:subagent:parent",
@@ -206,5 +228,58 @@ describe("sessions_spawn tool", () => {
 
     expect(hoisted.spawnSubagentDirectMock).not.toHaveBeenCalled();
     expect(hoisted.spawnAcpDirectMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects streamTo when runtime is subagent", async () => {
+    const tool = createSessionsSpawnTool({
+      agentSessionKey: "agent:main:main",
+    });
+
+    await expect(
+      tool.execute("call-5", {
+        task: "build feature",
+        runtime: "subagent",
+        streamTo: "parent",
+      }),
+    ).rejects.toThrow(
+      'sessions_spawn "streamTo" is supported only when runtime="acp" (got runtime="subagent").',
+    );
+
+    expect(hoisted.spawnSubagentDirectMock).not.toHaveBeenCalled();
+    expect(hoisted.spawnAcpDirectMock).not.toHaveBeenCalled();
+  });
+
+  it("passes workspaceDir through to subagent spawn context", async () => {
+    const tool = createSessionsSpawnTool({
+      agentSessionKey: "agent:main:main",
+      workspaceDir: "/workspace/project",
+    });
+
+    await tool.execute("call-6", {
+      task: "build feature",
+      runtime: "subagent",
+    });
+
+    expect(hoisted.spawnSubagentDirectMock).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.objectContaining({
+        workspaceDir: "/workspace/project",
+      }),
+    );
+  });
+
+  it("does not cap attachment content length in schema", () => {
+    const tool = createSessionsSpawnTool({
+      agentSessionKey: "agent:main:main",
+    });
+    const schema = tool.parameters as {
+      properties?: {
+        attachments?: {
+          items?: { properties?: { content?: Record<string, unknown> } };
+        };
+      };
+    };
+    const contentSchema = schema.properties?.attachments?.items?.properties?.content ?? {};
+    expect(contentSchema).not.toHaveProperty("maxLength");
   });
 });
