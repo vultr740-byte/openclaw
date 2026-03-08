@@ -51,6 +51,21 @@ const BRAVE_FRESHNESS_SHORTCUTS = new Set(["pd", "pw", "pm", "py"]);
 const BRAVE_FRESHNESS_RANGE = /^(\d{4}-\d{2}-\d{2})to(\d{4}-\d{2}-\d{2})$/;
 const BRAVE_SEARCH_LANG_CODE = /^[a-z]{2}$/i;
 const BRAVE_UI_LANG_LOCALE = /^([a-z]{2})-([a-z]{2})$/i;
+const PERPLEXITY_RECENCY_VALUES = new Set(["day", "week", "month", "year"]);
+const FRESHNESS_TO_RECENCY: Record<string, string> = {
+  pd: "day",
+  pw: "week",
+  pm: "month",
+  py: "year",
+};
+const RECENCY_TO_FRESHNESS: Record<string, string> = {
+  day: "pd",
+  week: "pw",
+  month: "pm",
+  year: "py",
+};
+const ISO_DATE_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/;
+const PERPLEXITY_DATE_PATTERN = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/;
 
 const WebSearchSchema = Type.Object({
   query: Type.String({ description: "Search query string." }),
@@ -992,7 +1007,10 @@ function normalizeBraveLanguageParams(params: { search_lang?: string; ui_lang?: 
   return { search_lang, ui_lang };
 }
 
-function normalizeFreshness(value: string | undefined): string | undefined {
+function normalizeFreshness(
+  value: string | undefined,
+  provider: "brave" | "perplexity" = "brave",
+): string | undefined {
   if (!value) {
     return undefined;
   }
@@ -1002,6 +1020,20 @@ function normalizeFreshness(value: string | undefined): string | undefined {
   }
 
   const lower = trimmed.toLowerCase();
+  if (provider === "perplexity") {
+    if (PERPLEXITY_RECENCY_VALUES.has(lower)) {
+      return lower;
+    }
+    if (BRAVE_FRESHNESS_SHORTCUTS.has(lower)) {
+      return FRESHNESS_TO_RECENCY[lower];
+    }
+    return undefined;
+  }
+
+  if (PERPLEXITY_RECENCY_VALUES.has(lower)) {
+    return RECENCY_TO_FRESHNESS[lower];
+  }
+
   if (BRAVE_FRESHNESS_SHORTCUTS.has(lower)) {
     return lower;
   }
@@ -1030,13 +1062,30 @@ function freshnessToPerplexityRecency(freshness: string | undefined): string | u
   if (!freshness) {
     return undefined;
   }
-  const map: Record<string, string> = {
-    pd: "day",
-    pw: "week",
-    pm: "month",
-    py: "year",
-  };
-  return map[freshness] ?? undefined;
+  return FRESHNESS_TO_RECENCY[freshness] ?? undefined;
+}
+
+function isoToPerplexityDate(iso: string): string | undefined {
+  const match = iso.match(ISO_DATE_PATTERN);
+  if (!match) {
+    return undefined;
+  }
+  const [, year, month, day] = match;
+  return `${parseInt(month, 10)}/${parseInt(day, 10)}/${year}`;
+}
+
+function normalizeToIsoDate(value: string): string | undefined {
+  const trimmed = value.trim();
+  if (ISO_DATE_PATTERN.test(trimmed)) {
+    return isValidIsoDate(trimmed) ? trimmed : undefined;
+  }
+  const match = trimmed.match(PERPLEXITY_DATE_PATTERN);
+  if (match) {
+    const [, month, day, year] = match;
+    const iso = `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
+    return isValidIsoDate(iso) ? iso : undefined;
+  }
+  return undefined;
 }
 
 function isValidIsoDate(value: string): boolean {
@@ -1782,7 +1831,9 @@ export function createWebSearchTool(options?: {
           docs: "https://docs.openclaw.ai/tools/web",
         });
       }
-      const freshness = rawFreshness ? normalizeFreshness(rawFreshness) : undefined;
+      const freshness = rawFreshness
+        ? normalizeFreshness(rawFreshness, provider === "perplexity" ? "perplexity" : "brave")
+        : undefined;
       if (rawFreshness && !freshness) {
         return jsonResult({
           error: "invalid_freshness",
@@ -1888,6 +1939,8 @@ export const __testing = {
   resolvePerplexityRequestModel,
   normalizeBraveLanguageParams,
   normalizeFreshness,
+  normalizeToIsoDate,
+  isoToPerplexityDate,
   freshnessToPerplexityRecency,
   resolveOpenAiModel,
   resolveOpenAiBaseUrl,

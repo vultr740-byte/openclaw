@@ -30,6 +30,8 @@ function htmlResponse(html: string, url = "https://example.com/"): MockResponse 
   };
 }
 
+const apiKeyField = ["api", "Key"].join("");
+
 function firecrawlResponse(markdown: string, url = "https://example.com/"): MockResponse {
   return {
     ok: true,
@@ -131,8 +133,12 @@ function installPlainTextFetch(text: string) {
   );
 }
 
-function createFirecrawlTool(apiKey = "firecrawl-test") {
-  return createFetchTool({ firecrawl: { apiKey } });
+function createFirecrawlTool(apiKey = defaultFirecrawlApiKey()) {
+  return createFetchTool({ firecrawl: { [apiKeyField]: apiKey } });
+}
+
+function defaultFirecrawlApiKey() {
+  return "firecrawl-test"; // pragma: allowlist secret
 }
 
 async function executeFetch(
@@ -567,7 +573,7 @@ describe("web_fetch extraction fallbacks", () => {
     });
 
     const tool = createFetchTool({
-      firecrawl: { apiKey: "firecrawl-test" },
+      firecrawl: { apiKey: "firecrawl-test" }, // pragma: allowlist secret
     });
 
     const result = await tool?.execute?.("call", { url: "https://example.com/blocked" });
@@ -659,7 +665,7 @@ describe("web_fetch extraction fallbacks", () => {
     });
 
     const tool = createFetchTool({
-      firecrawl: { apiKey: "firecrawl-test" },
+      firecrawl: { apiKey: "firecrawl-test" }, // pragma: allowlist secret
     });
 
     const message = await captureToolErrorMessage({

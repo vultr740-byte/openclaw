@@ -135,8 +135,8 @@ export function resolveImageModelConfigForTool(params: {
   let preferred: string | null = null;
 
   // MiniMax users: always try the canonical vision model first when auth exists.
-  if (primary.provider === "minimax" && providerOk) {
-    preferred = "minimax/MiniMax-VL-01";
+  if ((primary.provider === "minimax" || primary.provider === "minimax-portal") && providerOk) {
+    preferred = `${primary.provider}/MiniMax-VL-01`;
   } else if (configuredPrimarySupportsImage === false && providerOk && providerVisionFromConfig) {
     preferred = providerVisionFromConfig;
   } else if (primary.provider === "zai" && providerOk) {
