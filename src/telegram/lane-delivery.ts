@@ -382,21 +382,9 @@ export function createLaneTextDeliverer(params: CreateLaneTextDelivererParams) {
         lane.lastPartialText === text;
       if (reuseMatchingErrorPreview) {
         await params.stopDraftLane(lane);
-        try {
-          await params.deletePreviewMessage(previewMessageId);
-        } catch (err) {
-          params.log(
-            `telegram: ${laneName} matching error preview delete failed; reusing existing preview (${String(err)})`,
-          );
-          params.finalizedPreviewByLane[laneName] = true;
-          params.markDelivered();
-          return "preview-finalized";
-        }
         params.finalizedPreviewByLane[laneName] = true;
-        const delivered = await params.sendPayload(params.applyTextToPayload(payload, text));
-        // Preview was removed and replaced by a standard final send;
-        // keep cleanup in stop-only mode to avoid double delete attempts.
-        return delivered ? "sent" : "skipped";
+        params.markDelivered();
+        return "preview-finalized";
       }
       await params.stopDraftLane(lane);
       const delivered = await params.sendPayload(params.applyTextToPayload(payload, text));
