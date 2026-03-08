@@ -75,26 +75,6 @@ export function createSessionsSpawnTool(opts?: {
   /** Explicit agent ID override for cron/hook sessions where session key parsing may not work. */
   requesterAgentIdOverride?: string;
 }): AnyAgentTool {
-  const withWarnings = (payload: unknown, warnings: string[]): unknown => {
-    if (warnings.length === 0) {
-      return payload;
-    }
-    if (!payload || typeof payload !== "object") {
-      return {
-        payload,
-        warnings,
-      };
-    }
-    const existingWarningsRaw = (payload as Record<string, unknown>).warnings;
-    const existingWarnings = Array.isArray(existingWarningsRaw)
-      ? existingWarningsRaw.filter((entry): entry is string => typeof entry === "string")
-      : [];
-    return {
-      ...(payload as Record<string, unknown>),
-      warnings: [...existingWarnings, ...warnings],
-    };
-  };
-
   return {
     label: "Sessions",
     name: "sessions_spawn",
@@ -175,10 +155,9 @@ export function createSessionsSpawnTool(opts?: {
         );
         return jsonResult(result);
       }
-      const warnings: string[] = [];
       if (deliverInitialRun !== undefined) {
-        warnings.push(
-          'Ignored "deliverInitialRun" because this sessions_spawn call is runtime="subagent" (ACP only).',
+        throw new ToolInputError(
+          'sessions_spawn "deliverInitialRun" is supported only when runtime="acp".',
         );
       }
 
@@ -214,7 +193,7 @@ export function createSessionsSpawnTool(opts?: {
         },
       );
 
-      return jsonResult(withWarnings(result, warnings));
+      return jsonResult(result);
     },
   };
 }

@@ -259,65 +259,6 @@ describe("deliverReplies", () => {
     expect(runtime.error).not.toHaveBeenCalled();
   });
 
-  it("retries non-forum thread sends without message_thread_id when thread is missing", async () => {
-    const runtime = createRuntime();
-    const sendMessage = vi
-      .fn()
-      .mockRejectedValueOnce(createThreadNotFoundError("sendMessage"))
-      .mockResolvedValueOnce({
-        message_id: 17,
-        chat: { id: "123" },
-      });
-    const bot = createBot({ sendMessage });
-
-    await deliverWith({
-      replies: [{ text: "hello" }],
-      runtime,
-      bot,
-      thread: { id: 42, scope: "none" },
-    });
-
-    expect(sendMessage).toHaveBeenCalledTimes(2);
-    expect(sendMessage.mock.calls[0]?.[2]).toEqual(
-      expect.objectContaining({
-        message_thread_id: 42,
-      }),
-    );
-    expect(sendMessage.mock.calls[1]?.[2]).not.toHaveProperty("message_thread_id");
-    expect(runtime.error).not.toHaveBeenCalled();
-  });
-
-  it("drops reply_to_message_id on threadless retry", async () => {
-    const runtime = createRuntime();
-    const sendMessage = vi
-      .fn()
-      .mockRejectedValueOnce(createThreadNotFoundError("sendMessage"))
-      .mockResolvedValueOnce({
-        message_id: 18,
-        chat: { id: "123" },
-      });
-    const bot = createBot({ sendMessage });
-
-    await deliverWith({
-      replies: [{ text: "hello", replyToId: 321 }],
-      runtime,
-      bot,
-      replyToMode: "all",
-      thread: { id: 42, scope: "dm" },
-    });
-
-    expect(sendMessage).toHaveBeenCalledTimes(2);
-    expect(sendMessage.mock.calls[0]?.[2]).toEqual(
-      expect.objectContaining({
-        message_thread_id: 42,
-        reply_to_message_id: 321,
-      }),
-    );
-    expect(sendMessage.mock.calls[1]?.[2]).not.toHaveProperty("message_thread_id");
-    expect(sendMessage.mock.calls[1]?.[2]).not.toHaveProperty("reply_to_message_id");
-    expect(runtime.error).not.toHaveBeenCalled();
-  });
-
   it("does not retry forum sends without message_thread_id", async () => {
     const runtime = createRuntime();
     const sendMessage = vi.fn().mockRejectedValue(createThreadNotFoundError("sendMessage"));

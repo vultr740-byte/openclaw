@@ -70,20 +70,6 @@ Required behavior:
 5. Set `agentId` explicitly unless ACP default agent is known.
 6. Do not ask user to run slash commands or CLI when this path works directly.
 
-### Runtime-aware `sessions_spawn` parameters (important)
-
-Keep spawn arguments minimal and runtime-aware instead of hardcoding one shape:
-
-- For `runtime: "acp"`:
-  - Allowed ACP-only knobs (when needed): `deliverInitialRun`, `thread`, `mode`, `cwd`, `agentId`.
-  - Use `deliverInitialRun` only when you intentionally need to control first-run delivery behavior.
-- For `runtime: "subagent"`:
-  - Do **not** pass ACP-only fields such as `deliverInitialRun`.
-  - Prefer the core subset (`task`, optional `agentId`, `model`, `thinking`, `runTimeoutSeconds`, `cleanup`, `sandbox`).
-- If runtime is not explicit in user intent, pick runtime from intent first, then shape params for that runtime.
-
-This keeps calls portable across versions and avoids avoidable tool-input errors.
-
 Example:
 
 User: "spawn a test codex session in thread and tell it to say hi"
@@ -113,11 +99,6 @@ Required behavior when ACP backend is unavailable:
 3. After reinstall/repair, restart the gateway and explicitly offer to run that restart for the user.
 4. Retry ACP thread spawn once after repair.
 5. Only if repair+retry fails, report the concrete error and then offer fallback options.
-
-Status reporting hygiene:
-
-- After a successful probe/spawn check, report one concise success summary.
-- Do not repeat the same "gateway OK + spawn OK" block unless state changed (for example restart happened, probe failed then recovered, or config changed).
 
 When offering fallback, keep ACP first:
 

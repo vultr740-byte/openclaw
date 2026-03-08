@@ -191,33 +191,20 @@ describe("sessions_spawn tool", () => {
     expect(hoisted.spawnSubagentDirectMock).not.toHaveBeenCalled();
   });
 
-  it("ignores deliverInitialRun when runtime is subagent", async () => {
+  it("rejects deliverInitialRun when runtime is subagent", async () => {
     const tool = createSessionsSpawnTool({
       agentSessionKey: "agent:main:main",
     });
 
-    const result = await tool.execute("call-4", {
-      task: "build feature",
-      runtime: "subagent",
-      deliverInitialRun: false,
-    });
-
-    expect(result.details).toMatchObject({
-      status: "accepted",
-      childSessionKey: "agent:main:subagent:1",
-      runId: "run-subagent",
-      warnings: [
-        'Ignored "deliverInitialRun" because this sessions_spawn call is runtime="subagent" (ACP only).',
-      ],
-    });
-    expect(hoisted.spawnSubagentDirectMock).toHaveBeenCalledWith(
-      expect.objectContaining({
+    await expect(
+      tool.execute("call-4", {
         task: "build feature",
+        runtime: "subagent",
+        deliverInitialRun: false,
       }),
-      expect.objectContaining({
-        agentSessionKey: "agent:main:main",
-      }),
-    );
+    ).rejects.toThrow('sessions_spawn "deliverInitialRun" is supported only when runtime="acp".');
+
+    expect(hoisted.spawnSubagentDirectMock).not.toHaveBeenCalled();
     expect(hoisted.spawnAcpDirectMock).not.toHaveBeenCalled();
   });
 });

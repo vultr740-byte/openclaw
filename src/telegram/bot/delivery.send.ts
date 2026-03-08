@@ -30,12 +30,7 @@ function removeMessageThreadIdParam(
   if (!params) {
     return {};
   }
-  const {
-    message_thread_id: _ignoredThread,
-    reply_to_message_id: _ignoredReplyTo,
-    reply_parameters: _ignoredReplyParams,
-    ...rest
-  } = params;
+  const { message_thread_id: _ignored, ...rest } = params;
   return rest;
 }
 
@@ -47,9 +42,7 @@ export async function sendTelegramWithThreadFallback<T>(params: {
   send: (effectiveParams: Record<string, unknown>) => Promise<T>;
   shouldLog?: (err: unknown) => boolean;
 }): Promise<T> {
-  // Only forum topics are strict: dropping the thread would misroute to main topic.
-  // For DM topics and non-forum thread hints, prefer delivery continuity over hard-fail.
-  const allowThreadlessRetry = params.thread?.scope !== "forum";
+  const allowThreadlessRetry = params.thread?.scope === "dm";
   const hasThreadId = hasMessageThreadIdParam(params.requestParams);
   const shouldSuppressFirstErrorLog = (err: unknown) =>
     allowThreadlessRetry && hasThreadId && isTelegramThreadNotFoundError(err);
