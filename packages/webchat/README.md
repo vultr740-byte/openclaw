@@ -26,6 +26,10 @@ WEBCHAT_BASE_PATH=/ pnpm --dir packages/webchat build
 - `chat.abort`
 - stream event handling: `delta` / `final` / `aborted` / `error`
 
+## API
+
+- See [API.md](./API.md) for WebSocket handshake and chat method/event details.
+
 ## URL Params
 
 You can prefill settings from query or hash params:
