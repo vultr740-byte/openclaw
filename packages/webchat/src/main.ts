@@ -35,6 +35,7 @@ type PendingRequest = {
 
 const SETTINGS_STORAGE_KEY = "openclaw.webchat.settings.v1";
 const TOKEN_STORAGE_KEY = "openclaw.webchat.token.v1";
+const WEBCHAT_OPERATOR_SCOPES = ["operator.read", "operator.write"] as const;
 
 const gatewayUrlInput = document.querySelector<HTMLInputElement>("#gateway-url");
 const tokenInput = document.querySelector<HTMLInputElement>("#gateway-token");
@@ -402,7 +403,7 @@ async function completeHandshake(): Promise<void> {
       instanceId: crypto.randomUUID(),
     },
     role: "operator",
-    scopes: [],
+    scopes: [...WEBCHAT_OPERATOR_SCOPES],
     caps: ["tool-events"],
     auth: settings.token ? { token: settings.token } : undefined,
     locale: navigator.language,
