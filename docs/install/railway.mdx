@@ -30,11 +30,11 @@ Railway will either:
 Then open:
 
 - `https://<your-railway-domain>/setup` — setup wizard (password protected)
-- `https://<your-railway-domain>/openclaw` — Control UI
+- `https://<your-railway-domain>/webchat/` — WebChat UI (same domain as the gateway)
 
 ## What you get
 
-- Hosted OpenClaw Gateway + Control UI
+- Hosted OpenClaw Gateway + WebChat UI (`/webchat/`)
 - Web setup wizard at `/setup` (no terminal commands)
 - Persistent storage via Railway Volume (`/data`) so config/credentials/workspace survive redeploys
 - Backup export at `/setup/export` to migrate off Railway later
@@ -84,6 +84,8 @@ Add these variables:
 Notes:
 
 - The template sets Telegram to `dmPolicy: "allowlist"`, so no pairing codes are used.
+- WebChat is mounted at `https://<your-railway-domain>/webchat/` on the same domain as the gateway.
+- The template allowlists `https://${RAILWAY_STATIC_URL}` for browser-origin checks.
 - If `TELEGRAM_ALLOW_FROM` (or JSON variant) is empty, Telegram DMs are blocked.
 - Missing env vars referenced in the template will block startup.
 - To change the model or allowlist later, update the env vars and redeploy.

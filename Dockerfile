@@ -32,6 +32,7 @@ RUN apt-get update && \
 
 COPY --chown=node:node package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
 COPY --chown=node:node ui/package.json ./ui/package.json
+COPY --chown=node:node packages/webchat/package.json ./packages/webchat/package.json
 COPY --chown=node:node patches ./patches
 COPY --chown=node:node scripts ./scripts
 COPY scripts/docker-entrypoint.sh /usr/local/bin/openclaw-entrypoint
@@ -102,6 +103,8 @@ RUN for dir in /app/extensions /app/.agent /app/.agents; do \
       fi; \
     done
 RUN pnpm build
+# Build webchat static assets so the gateway can serve them from /webchat.
+RUN pnpm --dir packages/webchat build
 # Optionally skip Control UI assets in Docker builds.
 # Default to skipping; set OPENCLAW_BUILD_UI=1 to include Control UI assets.
 ARG OPENCLAW_BUILD_UI="0"

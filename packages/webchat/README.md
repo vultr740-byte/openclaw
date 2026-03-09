@@ -11,6 +11,13 @@ pnpm --dir packages/webchat dev --host 127.0.0.1 --port 4173
 
 Open `http://127.0.0.1:4173/`.
 
+Production build defaults to `base=/webchat/` so it can be mounted under one domain with the
+gateway. Override with `WEBCHAT_BASE_PATH` when needed:
+
+```bash
+WEBCHAT_BASE_PATH=/ pnpm --dir packages/webchat build
+```
+
 ## Features (MVP)
 
 - `connect.challenge` -> `connect` handshake
