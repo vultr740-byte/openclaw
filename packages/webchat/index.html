@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>OpenClaw WebChat</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <main class="app">
+      <section class="panel panel--connection">
+        <h1>OpenClaw WebChat</h1>
+        <div class="grid">
+          <label>
+            Gateway WS URL
+            <input id="gateway-url" placeholder="ws://127.0.0.1:18789" />
+          </label>
+          <label>
+            Gateway Token
+            <input id="gateway-token" placeholder="Paste token here" type="password" />
+          </label>
+          <label>
+            Session Key
+            <input id="session-key" placeholder="main" />
+          </label>
+        </div>
+        <div class="actions">
+          <button id="connect-btn" type="button">Connect</button>
+          <button id="disconnect-btn" type="button">Disconnect</button>
+          <button id="reload-btn" type="button">Reload History</button>
+        </div>
+        <p id="status" class="status status--info">Disconnected</p>
+      </section>
+
+      <section class="panel panel--chat">
+        <div id="messages" class="messages" aria-live="polite"></div>
+
+        <div class="composer">
+          <textarea
+            id="composer"
+            rows="4"
+            placeholder="Type a message. Enter to send, Shift+Enter for newline."
+          ></textarea>
+          <div class="actions">
+            <button id="send-btn" class="primary" type="button">Send</button>
+            <button id="stop-btn" type="button">Stop</button>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

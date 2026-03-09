@@ -532,6 +532,12 @@ importers:
         specifier: workspace:*
         version: link:../..
 
+  packages/webchat:
+    dependencies:
+      vite:
+        specifier: 7.3.1
+        version: 7.3.1(@types/node@25.3.5)(jiti@2.6.1)(lightningcss@1.30.2)(tsx@4.21.0)(yaml@2.8.2)
+
   ui:
     dependencies:
       '@lit-labs/signals':
