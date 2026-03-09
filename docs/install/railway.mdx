@@ -80,12 +80,13 @@ Add these variables:
 - `OPENAI_MODEL` (example: `gpt-5.2`)
 - `TELEGRAM_BOT_TOKEN`
 - `TELEGRAM_ALLOW_FROM` (comma-separated Telegram user ids, or set `TELEGRAM_ALLOW_FROM_JSON` to a JSON array)
+- `OPENCLAW_CONTROL_UI_ALLOWED_ORIGINS` (optional; comma-separated origin list for WebChat/Control UI; if omitted, startup will derive `https://${RAILWAY_STATIC_URL}` when available)
 
 Notes:
 
 - The template sets Telegram to `dmPolicy: "allowlist"`, so no pairing codes are used.
 - WebChat is mounted at `https://<your-railway-domain>/webchat/` on the same domain as the gateway.
-- The template allowlists `https://${RAILWAY_STATIC_URL}` for browser-origin checks.
+- By default the template allowlists `https://${RAILWAY_STATIC_URL}` for browser-origin checks; startup also auto-derives this origin when `OPENCLAW_CONTROL_UI_ALLOWED_ORIGINS` is unset.
 - If `TELEGRAM_ALLOW_FROM` (or JSON variant) is empty, Telegram DMs are blocked.
 - Missing env vars referenced in the template will block startup.
 - To change the model or allowlist later, update the env vars and redeploy.

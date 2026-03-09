@@ -96,6 +96,8 @@ const raw =
   process.env.TELEGRAM_ALLOW_FROM_JSON?.trim() ||
   process.env.TELEGRAM_ALLOW_FROM?.trim() ||
   "";
+const rawControlUiAllowedOrigins = process.env.OPENCLAW_CONTROL_UI_ALLOWED_ORIGINS?.trim() || "";
+const rawRailwayStaticUrl = process.env.RAILWAY_STATIC_URL?.trim() || "";
 const rawSessionDmScope = process.env.OPENCLAW_SESSION_DM_SCOPE?.trim() || "";
 const rawXaiBaseUrl = process.env.XAI_BASE_URL?.trim() || "";
 const rawXaiApiKey = process.env.XAI_API_KEY?.trim() || "";
@@ -121,6 +123,37 @@ if (raw) {
       .split(",")
       .map((entry) => String(entry).trim())
       .filter(Boolean);
+  }
+}
+
+function normalizeOrigin(value) {
+  const trimmed = String(value ?? "").trim();
+  if (!trimmed) {
+    return null;
+  }
+  if (trimmed.includes("${") || trimmed.includes("}")) {
+    return null;
+  }
+  const withScheme = /^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+  try {
+    return new URL(withScheme).origin;
+  } catch {
+    return null;
+  }
+}
+
+let controlUiAllowedOrigins = null;
+let shouldMergeDerivedControlUiAllowedOrigins = false;
+if (rawControlUiAllowedOrigins) {
+  controlUiAllowedOrigins = rawControlUiAllowedOrigins
+    .split(",")
+    .map((entry) => String(entry).trim())
+    .filter(Boolean);
+} else if (rawRailwayStaticUrl) {
+  const railwayOrigin = normalizeOrigin(rawRailwayStaticUrl);
+  if (railwayOrigin) {
+    controlUiAllowedOrigins = [railwayOrigin];
+    shouldMergeDerivedControlUiAllowedOrigins = true;
   }
 }
 
@@ -177,6 +210,32 @@ try {
       !Array.isArray(nextDefaults.models)
         ? nextDefaults.models
         : {};
+
+    const nextGateway =
+      root.gateway && typeof root.gateway === "object" && !Array.isArray(root.gateway)
+        ? root.gateway
+        : {};
+    const nextControlUi =
+      nextGateway.controlUi &&
+      typeof nextGateway.controlUi === "object" &&
+      !Array.isArray(nextGateway.controlUi)
+        ? nextGateway.controlUi
+        : {};
+
+    if (controlUiAllowedOrigins !== null) {
+      if (shouldMergeDerivedControlUiAllowedOrigins) {
+        const existingAllowedOrigins = Array.isArray(nextControlUi.allowedOrigins)
+          ? nextControlUi.allowedOrigins
+              .map((entry) => normalizeOrigin(entry))
+              .filter((entry) => typeof entry === "string" && entry.length > 0)
+          : [];
+        nextControlUi.allowedOrigins = [...new Set([...existingAllowedOrigins, ...controlUiAllowedOrigins])];
+      } else {
+        nextControlUi.allowedOrigins = controlUiAllowedOrigins;
+      }
+      nextGateway.controlUi = nextControlUi;
+      root.gateway = nextGateway;
+    }
 
     if (!xaiConfigured) {
       delete nextProviders.xai;
