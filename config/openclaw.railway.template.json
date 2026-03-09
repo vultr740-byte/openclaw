@@ -68,11 +68,7 @@
       "enabled": true,
       "basePath": "/webchat",
       "root": "/app/packages/webchat/dist",
-      "allowedOrigins": [
-        "https://${RAILWAY_STATIC_URL}",
-        "http://localhost:18789",
-        "http://127.0.0.1:18789"
-      ]
+      "allowedOrigins": ["https://${RAILWAY_STATIC_URL}"]
     }
   },
   "channels": {

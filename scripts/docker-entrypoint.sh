@@ -131,6 +131,9 @@ function normalizeOrigin(value) {
   if (!trimmed) {
     return null;
   }
+  if (trimmed === "*") {
+    return "*";
+  }
   if (trimmed.includes("${") || trimmed.includes("}")) {
     return null;
   }
@@ -142,17 +145,33 @@ function normalizeOrigin(value) {
   }
 }
 
+function normalizeOriginList(values) {
+  const normalized = [];
+  const seen = new Set();
+  for (const value of values) {
+    const origin = normalizeOrigin(value);
+    if (!origin || seen.has(origin)) {
+      continue;
+    }
+    seen.add(origin);
+    normalized.push(origin);
+  }
+  return normalized;
+}
+
 let controlUiAllowedOrigins = null;
 let shouldMergeDerivedControlUiAllowedOrigins = false;
 if (rawControlUiAllowedOrigins) {
-  controlUiAllowedOrigins = rawControlUiAllowedOrigins
-    .split(",")
-    .map((entry) => String(entry).trim())
-    .filter(Boolean);
+  controlUiAllowedOrigins = normalizeOriginList(
+    rawControlUiAllowedOrigins
+      .split(",")
+      .map((entry) => String(entry).trim())
+      .filter(Boolean),
+  );
 } else if (rawRailwayStaticUrl) {
-  const railwayOrigin = normalizeOrigin(rawRailwayStaticUrl);
-  if (railwayOrigin) {
-    controlUiAllowedOrigins = [railwayOrigin];
+  const derivedOrigins = normalizeOriginList([rawRailwayStaticUrl]);
+  if (derivedOrigins.length > 0) {
+    controlUiAllowedOrigins = derivedOrigins;
     shouldMergeDerivedControlUiAllowedOrigins = true;
   }
 }
@@ -224,11 +243,9 @@ try {
 
     if (controlUiAllowedOrigins !== null) {
       if (shouldMergeDerivedControlUiAllowedOrigins) {
-        const existingAllowedOrigins = Array.isArray(nextControlUi.allowedOrigins)
-          ? nextControlUi.allowedOrigins
-              .map((entry) => normalizeOrigin(entry))
-              .filter((entry) => typeof entry === "string" && entry.length > 0)
-          : [];
+        const existingAllowedOrigins = normalizeOriginList(
+          Array.isArray(nextControlUi.allowedOrigins) ? nextControlUi.allowedOrigins : [],
+        );
         nextControlUi.allowedOrigins = [...new Set([...existingAllowedOrigins, ...controlUiAllowedOrigins])];
       } else {
         nextControlUi.allowedOrigins = controlUiAllowedOrigins;

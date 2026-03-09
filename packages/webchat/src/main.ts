@@ -1,3 +1,5 @@
+import { sessionKeysMatch } from "./session-keys";
+
 type GatewayEventFrame = {
   type: "event";
   event: string;
@@ -74,6 +76,10 @@ let handshakeReady = false;
 let currentRunId: string | null = null;
 let streamText: string | null = null;
 let streamEl: HTMLDivElement | null = null;
+let pendingCloseStatusOverride: {
+  level: "info" | "ok" | "warn" | "error";
+  message: string;
+} | null = null;
 
 applySettingsFromUrl();
 const initialSettings = loadSettings();
@@ -309,7 +315,11 @@ async function connect(): Promise<void> {
     currentRunId = null;
     clearStreamingIndicator();
     rejectAllPending(`socket closed (${event.code}): ${event.reason || "no reason"}`);
-    if (manualClose) {
+    const closeStatusOverride = pendingCloseStatusOverride;
+    pendingCloseStatusOverride = null;
+    if (closeStatusOverride) {
+      setStatus(closeStatusOverride.level, closeStatusOverride.message);
+    } else if (manualClose) {
       setStatus("warn", "Disconnected.");
     } else {
       setStatus("error", `Disconnected (${event.code}): ${event.reason || "no reason"}`);
@@ -418,9 +428,10 @@ async function completeHandshake(): Promise<void> {
     setStatus("ok", "Connected. Loading chat history...");
     await loadChatHistory();
   } catch (error) {
+    const failureStatus = `Handshake failed: ${String(error)}`;
     handshakeReady = false;
     updateButtons();
-    setStatus("error", `Handshake failed: ${String(error)}`);
+    pendingCloseStatusOverride = { level: "error", message: failureStatus };
     disconnect();
   }
 }
@@ -516,43 +527,6 @@ function formatTimestamp(value: unknown): string {
     return new Date(value).toLocaleTimeString();
   }
   return new Date().toLocaleTimeString();
-}
-
-function normalizeSessionKey(value: string): string {
-  return value.trim().toLowerCase();
-}
-
-function sessionKeyAliases(value: string): Set<string> {
-  const aliases = new Set<string>();
-  const normalized = normalizeSessionKey(value);
-  if (!normalized) {
-    return aliases;
-  }
-  aliases.add(normalized);
-
-  // Gateway may emit canonical keys like `agent:codex:main` while UI uses `main`.
-  if (normalized.startsWith("agent:")) {
-    const secondColon = normalized.indexOf(":", "agent:".length);
-    if (secondColon > 0 && secondColon + 1 < normalized.length) {
-      aliases.add(normalized.slice(secondColon + 1));
-    }
-  }
-
-  return aliases;
-}
-
-function sessionKeysMatch(a: string, b: string): boolean {
-  const left = sessionKeyAliases(a);
-  const right = sessionKeyAliases(b);
-  if (left.size === 0 || right.size === 0) {
-    return false;
-  }
-  for (const candidate of left) {
-    if (right.has(candidate)) {
-      return true;
-    }
-  }
-  return false;
 }
 
 function ensureStreamingIndicator(): HTMLDivElement {
