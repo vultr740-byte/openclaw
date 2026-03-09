@@ -518,6 +518,43 @@ function formatTimestamp(value: unknown): string {
   return new Date().toLocaleTimeString();
 }
 
+function normalizeSessionKey(value: string): string {
+  return value.trim().toLowerCase();
+}
+
+function sessionKeyAliases(value: string): Set<string> {
+  const aliases = new Set<string>();
+  const normalized = normalizeSessionKey(value);
+  if (!normalized) {
+    return aliases;
+  }
+  aliases.add(normalized);
+
+  // Gateway may emit canonical keys like `agent:codex:main` while UI uses `main`.
+  if (normalized.startsWith("agent:")) {
+    const secondColon = normalized.indexOf(":", "agent:".length);
+    if (secondColon > 0 && secondColon + 1 < normalized.length) {
+      aliases.add(normalized.slice(secondColon + 1));
+    }
+  }
+
+  return aliases;
+}
+
+function sessionKeysMatch(a: string, b: string): boolean {
+  const left = sessionKeyAliases(a);
+  const right = sessionKeyAliases(b);
+  if (left.size === 0 || right.size === 0) {
+    return false;
+  }
+  for (const candidate of left) {
+    if (right.has(candidate)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 function ensureStreamingIndicator(): HTMLDivElement {
   if (streamEl) {
     return streamEl;
@@ -614,12 +651,15 @@ async function sendMessage(): Promise<void> {
   updateButtons();
 
   try {
-    await request("chat.send", {
+    const response = await request<{ runId?: unknown }>("chat.send", {
       sessionKey: settings.sessionKey,
       message,
       deliver: false,
       idempotencyKey: runId,
     });
+    if (typeof response?.runId === "string" && response.runId.trim()) {
+      currentRunId = response.runId.trim();
+    }
     setStatus("info", "Message sent. Waiting for assistant...");
   } catch (error) {
     currentRunId = null;
@@ -657,7 +697,11 @@ function handleChatEvent(payload: unknown): void {
 
   const chat = payload as ChatEventPayload;
   const settings = readSettingsFromInputs();
-  if (chat.sessionKey && chat.sessionKey !== settings.sessionKey) {
+  if (
+    typeof chat.sessionKey === "string" &&
+    chat.sessionKey.trim() &&
+    !sessionKeysMatch(chat.sessionKey, settings.sessionKey)
+  ) {
     return;
   }
 
