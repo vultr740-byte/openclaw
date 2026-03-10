@@ -47,6 +47,7 @@ export function createOpenClawTools(options?: {
   sandboxFsBridge?: SandboxFsBridge;
   fsPolicy?: ToolFsPolicy;
   workspaceDir?: string;
+  spawnWorkspaceDir?: string;
   sandboxed?: boolean;
   config?: OpenClawConfig;
   pluginToolAllowlist?: string[];
@@ -80,6 +81,9 @@ export function createOpenClawTools(options?: {
   sessionId?: string;
 }): AnyAgentTool[] {
   const workspaceDir = resolveWorkspaceRoot(options?.workspaceDir);
+  const spawnWorkspaceDir = resolveWorkspaceRoot(
+    options?.spawnWorkspaceDir ?? options?.workspaceDir,
+  );
   const imageTool = options?.agentDir?.trim()
     ? createImageTool({
         config: options?.config,
@@ -195,7 +199,7 @@ export function createOpenClawTools(options?: {
       agentGroupId: options?.agentGroupId,
       agentGroupChannel: options?.agentGroupChannel,
       agentGroupSpace: options?.agentGroupSpace,
-      workspaceDir,
+      workspaceDir: spawnWorkspaceDir,
       sandboxed: options?.sandboxed,
       requesterAgentIdOverride: options?.requesterAgentIdOverride,
     }),

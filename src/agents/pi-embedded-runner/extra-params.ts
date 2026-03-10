@@ -4,6 +4,11 @@ import { streamSimple } from "@mariozechner/pi-ai";
 import type { ThinkLevel } from "../../auto-reply/thinking.js";
 import type { OpenClawConfig } from "../../config/config.js";
 import { resolveAgentModelEntry } from "../model-config.js";
+import {
+  requiresOpenAiCompatibleAnthropicToolPayload,
+  usesOpenAiFunctionAnthropicToolSchema,
+  usesOpenAiStringModeAnthropicToolChoice,
+} from "../provider-capabilities.js";
 import { log } from "./logger.js";
 
 const OPENROUTER_APP_HEADERS: Record<string, string> = {
@@ -370,7 +375,7 @@ function createOpenAIResponsesContextManagementWrapper(
     const originalOnPayload = options?.onPayload;
     return underlying(model, context, {
       ...options,
-      onPayload: (payload) => {
+      onPayload: (payload, payloadModel) => {
         if (payload && typeof payload === "object") {
           applyOpenAIResponsesPayloadOverrides({
             payloadObj: payload as Record<string, unknown>,
@@ -380,7 +385,7 @@ function createOpenAIResponsesContextManagementWrapper(
             compactThreshold,
           });
         }
-        originalOnPayload?.(payload);
+        return originalOnPayload?.(payload, payloadModel);
       },
     });
   };
@@ -430,14 +435,14 @@ function createOpenAIServiceTierWrapper(
     const originalOnPayload = options?.onPayload;
     return underlying(model, context, {
       ...options,
-      onPayload: (payload) => {
+      onPayload: (payload, payloadModel) => {
         if (payload && typeof payload === "object") {
           const payloadObj = payload as Record<string, unknown>;
           if (payloadObj.service_tier === undefined) {
             payloadObj.service_tier = serviceTier;
           }
         }
-        originalOnPayload?.(payload);
+        return originalOnPayload?.(payload, payloadModel);
       },
     });
   };
@@ -612,7 +617,7 @@ function createOpenRouterSystemCacheWrapper(baseStreamFn: StreamFn | undefined):
     const originalOnPayload = options?.onPayload;
     return underlying(model, context, {
       ...options,
-      onPayload: (payload) => {
+      onPayload: (payload, payloadModel) => {
         const messages = (payload as Record<string, unknown>)?.messages;
         if (Array.isArray(messages)) {
           for (const msg of messages as PayloadMessage[]) {
@@ -631,7 +636,7 @@ function createOpenRouterSystemCacheWrapper(baseStreamFn: StreamFn | undefined):
             }
           }
         }
-        originalOnPayload?.(payload);
+        return originalOnPayload?.(payload, payloadModel);
       },
     });
   };
@@ -676,14 +681,14 @@ function createSiliconFlowThinkingWrapper(baseStreamFn: StreamFn | undefined): S
     const originalOnPayload = options?.onPayload;
     return underlying(model, context, {
       ...options,
-      onPayload: (payload) => {
+      onPayload: (payload, payloadModel) => {
         if (payload && typeof payload === "object") {
           const payloadObj = payload as Record<string, unknown>;
           if (payloadObj.thinking === "off") {
             payloadObj.thinking = null;
           }
         }
-        originalOnPayload?.(payload);
+        return originalOnPayload?.(payload, payloadModel);
       },
     });
   };
@@ -767,7 +772,7 @@ function createMoonshotThinkingWrapper(
     const originalOnPayload = options?.onPayload;
     return underlying(model, context, {
       ...options,
-      onPayload: (payload) => {
+      onPayload: (payload, payloadModel) => {
         if (payload && typeof payload === "object") {
           const payloadObj = payload as Record<string, unknown>;
           let effectiveThinkingType = normalizeMoonshotThinkingType(payloadObj.thinking);
@@ -784,41 +789,76 @@ function createMoonshotThinkingWrapper(
             payloadObj.tool_choice = "auto";
           }
         }
-        originalOnPayload?.(payload);
+        return originalOnPayload?.(payload, payloadModel);
       },
     });
   };
 }
 
-function isKimiCodingAnthropicEndpoint(model: {
+function requiresAnthropicToolPayloadCompatibilityForModel(model: {
   api?: unknown;
   provider?: unknown;
-  baseUrl?: unknown;
+  compat?: unknown;
 }): boolean {
   if (model.api !== "anthropic-messages") {
     return false;
   }
 
-  if (typeof model.provider === "string" && model.provider.trim().toLowerCase() === "kimi-coding") {
+  if (
+    typeof model.provider === "string" &&
+    requiresOpenAiCompatibleAnthropicToolPayload(model.provider)
+  ) {
     return true;
   }
 
-  if (typeof model.baseUrl !== "string" || !model.baseUrl.trim()) {
+  if (!model.compat || typeof model.compat !== "object" || Array.isArray(model.compat)) {
     return false;
   }
 
-  try {
-    const parsed = new URL(model.baseUrl);
-    const host = parsed.hostname.toLowerCase();
-    const pathname = parsed.pathname.toLowerCase();
-    return host.endsWith("kimi.com") && pathname.startsWith("/coding");
-  } catch {
-    const normalized = model.baseUrl.toLowerCase();
-    return normalized.includes("kimi.com/coding");
-  }
+  return (
+    (model.compat as { requiresOpenAiAnthropicToolPayload?: unknown })
+      .requiresOpenAiAnthropicToolPayload === true
+  );
 }
 
-function normalizeKimiCodingToolDefinition(tool: unknown): Record<string, unknown> | undefined {
+function usesOpenAiFunctionAnthropicToolSchemaForModel(model: {
+  provider?: unknown;
+  compat?: unknown;
+}): boolean {
+  if (typeof model.provider === "string" && usesOpenAiFunctionAnthropicToolSchema(model.provider)) {
+    return true;
+  }
+  if (!model.compat || typeof model.compat !== "object" || Array.isArray(model.compat)) {
+    return false;
+  }
+  return (
+    (model.compat as { requiresOpenAiAnthropicToolPayload?: unknown })
+      .requiresOpenAiAnthropicToolPayload === true
+  );
+}
+
+function usesOpenAiStringModeAnthropicToolChoiceForModel(model: {
+  provider?: unknown;
+  compat?: unknown;
+}): boolean {
+  if (
+    typeof model.provider === "string" &&
+    usesOpenAiStringModeAnthropicToolChoice(model.provider)
+  ) {
+    return true;
+  }
+  if (!model.compat || typeof model.compat !== "object" || Array.isArray(model.compat)) {
+    return false;
+  }
+  return (
+    (model.compat as { requiresOpenAiAnthropicToolPayload?: unknown })
+      .requiresOpenAiAnthropicToolPayload === true
+  );
+}
+
+function normalizeOpenAiFunctionAnthropicToolDefinition(
+  tool: unknown,
+): Record<string, unknown> | undefined {
   if (!tool || typeof tool !== "object" || Array.isArray(tool)) {
     return undefined;
   }
@@ -856,12 +896,21 @@ function normalizeKimiCodingToolDefinition(tool: unknown): Record<string, unknow
   };
 }
 
-function normalizeKimiCodingToolChoice(toolChoice: unknown): unknown {
+function normalizeOpenAiStringModeAnthropicToolChoice(toolChoice: unknown): unknown {
   if (!toolChoice || typeof toolChoice !== "object" || Array.isArray(toolChoice)) {
     return toolChoice;
   }
 
   const choice = toolChoice as Record<string, unknown>;
+  if (choice.type === "auto") {
+    return "auto";
+  }
+  if (choice.type === "none") {
+    return "none";
+  }
+  if (choice.type === "required") {
+    return "required";
+  }
   if (choice.type === "any") {
     return "required";
   }
@@ -876,26 +925,39 @@ function normalizeKimiCodingToolChoice(toolChoice: unknown): unknown {
 }
 
 /**
- * Kimi Coding's anthropic-messages endpoint expects OpenAI-style tool payloads
+ * Some Anthropic-compatible providers expect OpenAI-style tool payloads
  * (`tools[].function`) even when messages use Anthropic request framing.
  */
-function createKimiCodingAnthropicToolSchemaWrapper(baseStreamFn: StreamFn | undefined): StreamFn {
+function createAnthropicToolPayloadCompatibilityWrapper(
+  baseStreamFn: StreamFn | undefined,
+): StreamFn {
   const underlying = baseStreamFn ?? streamSimple;
   return (model, context, options) => {
     const originalOnPayload = options?.onPayload;
     return underlying(model, context, {
       ...options,
-      onPayload: (payload) => {
-        if (payload && typeof payload === "object" && isKimiCodingAnthropicEndpoint(model)) {
+      onPayload: (payload, payloadModel) => {
+        if (
+          payload &&
+          typeof payload === "object" &&
+          requiresAnthropicToolPayloadCompatibilityForModel(model)
+        ) {
           const payloadObj = payload as Record<string, unknown>;
-          if (Array.isArray(payloadObj.tools)) {
+          if (
+            Array.isArray(payloadObj.tools) &&
+            usesOpenAiFunctionAnthropicToolSchemaForModel(model)
+          ) {
             payloadObj.tools = payloadObj.tools
-              .map((tool) => normalizeKimiCodingToolDefinition(tool))
+              .map((tool) => normalizeOpenAiFunctionAnthropicToolDefinition(tool))
               .filter((tool): tool is Record<string, unknown> => !!tool);
           }
-          payloadObj.tool_choice = normalizeKimiCodingToolChoice(payloadObj.tool_choice);
+          if (usesOpenAiStringModeAnthropicToolChoiceForModel(model)) {
+            payloadObj.tool_choice = normalizeOpenAiStringModeAnthropicToolChoice(
+              payloadObj.tool_choice,
+            );
+          }
         }
-        originalOnPayload?.(payload);
+        return originalOnPayload?.(payload, payloadModel);
       },
     });
   };
@@ -957,9 +1019,9 @@ function createOpenRouterWrapper(
         ...OPENROUTER_APP_HEADERS,
         ...options?.headers,
       },
-      onPayload: (payload) => {
+      onPayload: (payload, payloadModel) => {
         normalizeProxyReasoningPayload(payload, thinkingLevel);
-        onPayload?.(payload);
+        return onPayload?.(payload, payloadModel);
       },
     });
   };
@@ -993,9 +1055,9 @@ function createKilocodeWrapper(
         ...options?.headers,
         ...resolveKilocodeAppHeaders(),
       },
-      onPayload: (payload) => {
+      onPayload: (payload, payloadModel) => {
         normalizeProxyReasoningPayload(payload, thinkingLevel);
-        onPayload?.(payload);
+        return onPayload?.(payload, payloadModel);
       },
     });
   };
@@ -1076,7 +1138,7 @@ function createGoogleThinkingPayloadWrapper(
     const onPayload = options?.onPayload;
     return underlying(model, context, {
       ...options,
-      onPayload: (payload) => {
+      onPayload: (payload, payloadModel) => {
         if (model.api === "google-generative-ai") {
           sanitizeGoogleThinkingPayload({
             payload,
@@ -1084,7 +1146,7 @@ function createGoogleThinkingPayloadWrapper(
             thinkingLevel,
           });
         }
-        onPayload?.(payload);
+        return onPayload?.(payload, payloadModel);
       },
     });
   };
@@ -1112,12 +1174,12 @@ function createZaiToolStreamWrapper(
     const originalOnPayload = options?.onPayload;
     return underlying(model, context, {
       ...options,
-      onPayload: (payload) => {
+      onPayload: (payload, payloadModel) => {
         if (payload && typeof payload === "object") {
           // Inject tool_stream: true for Z.AI API
           (payload as Record<string, unknown>).tool_stream = true;
         }
-        originalOnPayload?.(payload);
+        return originalOnPayload?.(payload, payloadModel);
       },
     });
   };
@@ -1160,11 +1222,11 @@ function createParallelToolCallsWrapper(
     const originalOnPayload = options?.onPayload;
     return underlying(model, context, {
       ...options,
-      onPayload: (payload) => {
+      onPayload: (payload, payloadModel) => {
         if (payload && typeof payload === "object") {
           (payload as Record<string, unknown>).parallel_tool_calls = enabled;
         }
-        originalOnPayload?.(payload);
+        return originalOnPayload?.(payload, payloadModel);
       },
     });
   };
@@ -1240,7 +1302,7 @@ export function applyExtraParamsToAgent(
     agent.streamFn = createMoonshotThinkingWrapper(agent.streamFn, moonshotThinkingType);
   }
 
-  agent.streamFn = createKimiCodingAnthropicToolSchemaWrapper(agent.streamFn);
+  agent.streamFn = createAnthropicToolPayloadCompatibilityWrapper(agent.streamFn);
 
   if (provider === "openrouter") {
     log.debug(`applying OpenRouter app attribution headers for ${provider}/${modelId}`);

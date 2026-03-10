@@ -54,6 +54,7 @@ export type SpawnAcpParams = {
   task: string;
   label?: string;
   agentId?: string;
+  resumeSessionId?: string;
   cwd?: string;
   mode?: SpawnAcpMode;
   thread?: boolean;
@@ -592,6 +593,7 @@ export async function spawnAcpDirect(
       sessionKey,
       agent: targetAgentId,
       mode: runtimeMode,
+      resumeSessionId: params.resumeSessionId,
       cwd: params.cwd,
       backendId: cfg.acp?.backend,
     });
