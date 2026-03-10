@@ -287,8 +287,8 @@ export const ToolsWebSearchSchema = z
     perplexity: z
       .object({
         apiKey: SecretInputSchema.optional().register(sensitive),
-        // Legacy Sonar/OpenRouter fields — kept for backward compatibility
-        // so existing configs don't fail validation. Ignored at runtime.
+        // Legacy Sonar/OpenRouter compatibility fields.
+        // Setting either opts Perplexity back into the chat-completions path.
         baseUrl: z.string().optional(),
         model: z.string().optional(),
       })
@@ -314,6 +314,12 @@ export const ToolsWebSearchSchema = z
         apiKey: SecretInputSchema.optional().register(sensitive),
         baseUrl: z.string().optional(),
         model: z.string().optional(),
+      })
+      .strict()
+      .optional(),
+    brave: z
+      .object({
+        mode: z.union([z.literal("web"), z.literal("llm-context")]).optional(),
       })
       .strict()
       .optional(),

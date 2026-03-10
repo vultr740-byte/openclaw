@@ -6,6 +6,7 @@ import {
   resolveStorePath,
 } from "../../config/sessions.js";
 import { resolveMessageChannelSelection } from "../../infra/outbound/channel-selection.js";
+import { maybeResolveIdLikeTarget } from "../../infra/outbound/target-resolver.js";
 import type { OutboundChannel } from "../../infra/outbound/targets.js";
 import {
   resolveOutboundTarget,
@@ -201,10 +202,16 @@ export async function resolveDeliveryTarget(
       error: docked.error,
     };
   }
+  const idLikeTarget = await maybeResolveIdLikeTarget({
+    cfg,
+    channel,
+    input: docked.to,
+    accountId,
+  });
   return {
     ok: true,
     channel,
-    to: docked.to,
+    to: idLikeTarget?.to ?? docked.to,
     accountId,
     threadId,
     mode,
