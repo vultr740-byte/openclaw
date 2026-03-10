@@ -96,6 +96,7 @@ const raw =
   process.env.TELEGRAM_ALLOW_FROM_JSON?.trim() ||
   process.env.TELEGRAM_ALLOW_FROM?.trim() ||
   "";
+const rawTelegramBotToken = process.env.TELEGRAM_BOT_TOKEN?.trim() || "";
 const rawControlUiAllowedOrigins = process.env.OPENCLAW_CONTROL_UI_ALLOWED_ORIGINS?.trim() || "";
 const rawRailwayStaticUrl = process.env.RAILWAY_STATIC_URL?.trim() || "";
 const rawSessionDmScope = process.env.OPENCLAW_SESSION_DM_SCOPE?.trim() || "";
@@ -157,6 +158,52 @@ function normalizeOriginList(values) {
     normalized.push(origin);
   }
   return normalized;
+}
+
+function containsEnvReference(value) {
+  return /\$\{[A-Z_][A-Z0-9_]*\}/.test(String(value ?? ""));
+}
+
+function normalizeConfiguredString(value) {
+  const trimmed = String(value ?? "").trim();
+  if (!trimmed || containsEnvReference(trimmed)) {
+    return undefined;
+  }
+  return trimmed;
+}
+
+function normalizeAllowFromEntries(value) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.map((entry) => String(entry).trim()).filter(Boolean);
+}
+
+function hasConfiguredTelegramToken(channelConfig) {
+  if (!channelConfig || typeof channelConfig !== "object" || Array.isArray(channelConfig)) {
+    return false;
+  }
+  if (rawTelegramBotToken) {
+    return true;
+  }
+  if (
+    normalizeConfiguredString(channelConfig.botToken) ||
+    normalizeConfiguredString(channelConfig.tokenFile)
+  ) {
+    return true;
+  }
+  const accounts = channelConfig.accounts;
+  if (!accounts || typeof accounts !== "object" || Array.isArray(accounts)) {
+    return false;
+  }
+  return Object.values(accounts).some(
+    (account) =>
+      account &&
+      typeof account === "object" &&
+      !Array.isArray(account) &&
+      (normalizeConfiguredString(account.botToken) ||
+        normalizeConfiguredString(account.tokenFile)),
+  );
 }
 
 let controlUiAllowedOrigins = null;
@@ -240,6 +287,16 @@ try {
       !Array.isArray(nextGateway.controlUi)
         ? nextGateway.controlUi
         : {};
+    const nextChannels =
+      root.channels && typeof root.channels === "object" && !Array.isArray(root.channels)
+        ? root.channels
+        : {};
+    const nextTelegram =
+      nextChannels.telegram &&
+      typeof nextChannels.telegram === "object" &&
+      !Array.isArray(nextChannels.telegram)
+        ? nextChannels.telegram
+        : null;
 
     if (controlUiAllowedOrigins !== null) {
       if (shouldMergeDerivedControlUiAllowedOrigins) {
@@ -252,6 +309,25 @@ try {
       }
       nextGateway.controlUi = nextControlUi;
       root.gateway = nextGateway;
+    }
+
+    if (nextTelegram) {
+      const telegramAllowFrom = normalizeAllowFromEntries(nextTelegram.allowFrom);
+      nextTelegram.allowFrom = telegramAllowFrom;
+
+      if (!hasConfiguredTelegramToken(nextTelegram)) {
+        nextTelegram.enabled = false;
+        if (containsEnvReference(nextTelegram.botToken)) {
+          delete nextTelegram.botToken;
+        }
+      }
+
+      if (nextTelegram.dmPolicy === "allowlist" && telegramAllowFrom.length === 0) {
+        nextTelegram.dmPolicy = "pairing";
+      }
+
+      nextChannels.telegram = nextTelegram;
+      root.channels = nextChannels;
     }
 
     if (!xaiConfigured) {
