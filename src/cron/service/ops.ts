@@ -440,7 +440,7 @@ async function prepareManualRun(
 async function finishPreparedManualRun(
   state: CronServiceState,
   prepared: Extract<PreparedManualRun, { ran: true }>,
-  _mode?: "due" | "force",
+  mode?: "due" | "force",
 ): Promise<void> {
   const executionJob = prepared.executionJob;
   const startedAt = prepared.startedAt;
@@ -461,13 +461,18 @@ async function finishPreparedManualRun(
       return;
     }
 
-    const shouldDelete = applyJobResult(state, job, {
-      status: coreResult.status,
-      error: coreResult.error,
-      delivered: coreResult.delivered,
-      startedAt,
-      endedAt,
-    });
+    const shouldDelete = applyJobResult(
+      state,
+      job,
+      {
+        status: coreResult.status,
+        error: coreResult.error,
+        delivered: coreResult.delivered,
+        startedAt,
+        endedAt,
+      },
+      { preserveSchedule: mode === "force" },
+    );
     const followupExpired = isFollowupExpired(job, endedAt);
     const stopFollowup = shouldStopFollowup(job, coreResult);
     const shouldRemove = shouldDelete || followupExpired || stopFollowup;
@@ -516,7 +521,7 @@ async function finishPreparedManualRun(
       snapshot: postRunSnapshot,
       removed: postRunRemoved,
     });
-    recomputeNextRunsForMaintenance(state);
+    recomputeNextRunsForMaintenance(state, { recomputeExpired: true });
     await persist(state);
     armTimer(state);
   });

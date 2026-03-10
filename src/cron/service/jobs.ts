@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import { normalizeAgentId } from "../../routing/session-key.js";
 import { parseAbsoluteTimeMs } from "../parse.js";
-import { computeNextRunAtMs } from "../schedule.js";
+import { computeNextRunAtMs, computePreviousRunAtMs } from "../schedule.js";
 import {
   normalizeCronStaggerMs,
   resolveCronStaggerMs,
@@ -78,6 +78,34 @@ function computeStaggeredCronNextRunAtMs(job: CronJob, nowMs: number) {
       return shifted;
     }
     cursorMs = Math.max(cursorMs + 1, baseNext + 1_000);
+  }
+  return undefined;
+}
+
+function computeStaggeredCronPreviousRunAtMs(job: CronJob, nowMs: number) {
+  if (job.schedule.kind !== "cron") {
+    return undefined;
+  }
+
+  const staggerMs = resolveCronStaggerMs(job.schedule);
+  const offsetMs = resolveStableCronOffsetMs(job.id, staggerMs);
+  if (offsetMs <= 0) {
+    return computePreviousRunAtMs(job.schedule, nowMs);
+  }
+
+  // Shift the cursor backwards by the same per-job offset used for next-run
+  // math so previous-run lookup matches the effective staggered schedule.
+  let cursorMs = Math.max(0, nowMs - offsetMs);
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    const basePrevious = computePreviousRunAtMs(job.schedule, cursorMs);
+    if (basePrevious === undefined) {
+      return undefined;
+    }
+    const shifted = basePrevious + offsetMs;
+    if (shifted <= nowMs) {
+      return shifted;
+    }
+    cursorMs = Math.max(0, basePrevious - 1_000);
   }
   return undefined;
 }
@@ -250,6 +278,14 @@ export function computeJobNextRunAtMs(job: CronJob, nowMs: number): number | und
   return isFiniteTimestamp(next) ? next : undefined;
 }
 
+export function computeJobPreviousRunAtMs(job: CronJob, nowMs: number): number | undefined {
+  if (!job.enabled || job.schedule.kind !== "cron") {
+    return undefined;
+  }
+  const previous = computeStaggeredCronPreviousRunAtMs(job, nowMs);
+  return isFiniteTimestamp(previous) ? previous : undefined;
+}
+
 /** Maximum consecutive schedule errors before auto-disabling a job. */
 const MAX_SCHEDULE_ERRORS = 3;
 
@@ -340,21 +376,21 @@ function normalizeJobTickState(params: { state: CronServiceState; job: CronJob; 
 function walkSchedulableJobs(
   state: CronServiceState,
   fn: (params: { job: CronJob; nowMs: number }) => boolean,
+  nowMs = state.deps.nowMs(),
 ): boolean {
   if (!state.store) {
     return false;
   }
   let changed = false;
-  const now = state.deps.nowMs();
   for (const job of state.store.jobs) {
-    const tick = normalizeJobTickState({ state, job, nowMs: now });
+    const tick = normalizeJobTickState({ state, job, nowMs });
     if (tick.changed) {
       changed = true;
     }
     if (tick.skip) {
       continue;
     }
-    if (fn({ job, nowMs: now })) {
+    if (fn({ job, nowMs })) {
       changed = true;
     }
   }
@@ -406,19 +442,39 @@ export function recomputeNextRuns(state: CronServiceState): boolean {
  * to prevent silently advancing past-due nextRunAtMs values without execution
  * (see #13992).
  */
-export function recomputeNextRunsForMaintenance(state: CronServiceState): boolean {
-  return walkSchedulableJobs(state, ({ job, nowMs: now }) => {
-    let changed = false;
-    // Only compute missing nextRunAtMs, do NOT recompute existing ones.
-    // If a job was past-due but not found by findDueJobs, recomputing would
-    // cause it to be silently skipped.
-    if (!isFiniteTimestamp(job.state.nextRunAtMs)) {
-      if (recomputeJobNextRunAtMs({ state, job, nowMs: now })) {
-        changed = true;
+export function recomputeNextRunsForMaintenance(
+  state: CronServiceState,
+  opts?: { recomputeExpired?: boolean; nowMs?: number },
+): boolean {
+  const recomputeExpired = opts?.recomputeExpired ?? false;
+  return walkSchedulableJobs(
+    state,
+    ({ job, nowMs: now }) => {
+      let changed = false;
+      if (!isFiniteTimestamp(job.state.nextRunAtMs)) {
+        // Missing or invalid nextRunAtMs is always repaired.
+        if (recomputeJobNextRunAtMs({ state, job, nowMs: now })) {
+          changed = true;
+        }
+      } else if (
+        recomputeExpired &&
+        now >= job.state.nextRunAtMs &&
+        typeof job.state.runningAtMs !== "number"
+      ) {
+        // Only advance when the expired slot was already executed.
+        // If not, preserve the past-due value so the job can still run.
+        const lastRun = job.state.lastRunAtMs;
+        const alreadyExecutedSlot = isFiniteTimestamp(lastRun) && lastRun >= job.state.nextRunAtMs;
+        if (alreadyExecutedSlot) {
+          if (recomputeJobNextRunAtMs({ state, job, nowMs: now })) {
+            changed = true;
+          }
+        }
       }
-    }
-    return changed;
-  });
+      return changed;
+    },
+    opts?.nowMs,
+  );
 }
 
 export function nextWakeAtMs(state: CronServiceState) {
