@@ -137,14 +137,11 @@ export function applySearchKey(
   provider: SearchProvider,
   key: SecretInput,
 ): OpenClawConfig {
+  if (provider === "openai") {
+    return applyOpenAiSearchKey(config, key);
+  }
   const search = { ...config.tools?.web?.search, provider, enabled: true };
   switch (provider) {
-    case "openai":
-      search.openai = {
-        ...search.openai,
-        apiKey: typeof key === "string" ? key : undefined,
-      };
-      break;
     case "brave":
       search.apiKey = key;
       break;
@@ -166,6 +163,47 @@ export function applySearchKey(
     tools: {
       ...config.tools,
       web: { ...config.tools?.web, search },
+    },
+  };
+}
+
+function applyOpenAiSearchKey(config: OpenClawConfig, key: SecretInput): OpenClawConfig {
+  const search = { ...config.tools?.web?.search, provider: "openai", enabled: true };
+  const models = { ...config.models };
+  const providers = { ...models.providers };
+  const openaiProvider = { ...(providers?.openai as Record<string, unknown> | undefined) };
+
+  if (typeof key === "string") {
+    return {
+      ...config,
+      tools: {
+        ...config.tools,
+        web: {
+          ...config.tools?.web,
+          search: { ...search, openai: { ...search.openai, apiKey: key } },
+        },
+      },
+    };
+  }
+
+  return {
+    ...config,
+    tools: {
+      ...config.tools,
+      web: {
+        ...config.tools?.web,
+        search: { ...search, openai: { ...search.openai, apiKey: undefined } },
+      },
+    },
+    models: {
+      ...models,
+      providers: {
+        ...providers,
+        openai: {
+          ...openaiProvider,
+          apiKey: key,
+        },
+      },
     },
   };
 }

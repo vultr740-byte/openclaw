@@ -92,6 +92,18 @@ describe("setupSearch", () => {
     expect(result.tools?.web?.search?.enabled).toBe(true);
   });
 
+  it("sets provider and key for openai", async () => {
+    const cfg: OpenClawConfig = {};
+    const { prompter } = createPrompter({
+      selectValue: "openai",
+      textValue: "sk-openai-test",
+    });
+    const result = await setupSearch(cfg, runtime, prompter);
+    expect(result.tools?.web?.search?.provider).toBe("openai");
+    expect(result.tools?.web?.search?.openai?.apiKey).toBe("sk-openai-test");
+    expect(result.tools?.web?.search?.enabled).toBe(true);
+  });
+
   it("sets provider and key for brave", async () => {
     const cfg: OpenClawConfig = {};
     const { prompter } = createPrompter({
@@ -258,6 +270,22 @@ describe("setupSearch", () => {
     expect(prompter.text).not.toHaveBeenCalled();
   });
 
+  it("stores env-backed SecretRef when secretInputMode=ref for openai", async () => {
+    const cfg: OpenClawConfig = {};
+    const { prompter } = createPrompter({ selectValue: "openai" });
+    const result = await setupSearch(cfg, runtime, prompter, {
+      secretInputMode: "ref", // pragma: allowlist secret
+    });
+    expect(result.tools?.web?.search?.provider).toBe("openai");
+    expect(result.tools?.web?.search?.openai?.apiKey).toBeUndefined();
+    expect(result.models?.providers?.openai?.apiKey).toEqual({
+      source: "env",
+      provider: "default",
+      id: "OPENAI_API_KEY", // pragma: allowlist secret
+    });
+    expect(prompter.text).not.toHaveBeenCalled();
+  });
+
   it("stores env-backed SecretRef when secretInputMode=ref for brave", async () => {
     const cfg: OpenClawConfig = {};
     const { prompter } = createPrompter({ selectValue: "brave" });
@@ -283,9 +311,9 @@ describe("setupSearch", () => {
     expect(result.tools?.web?.search?.apiKey).toBe("BSA-plain");
   });
 
-  it("exports all 5 providers in SEARCH_PROVIDER_OPTIONS", () => {
-    expect(SEARCH_PROVIDER_OPTIONS).toHaveLength(5);
+  it("exports all 6 providers in SEARCH_PROVIDER_OPTIONS", () => {
+    expect(SEARCH_PROVIDER_OPTIONS).toHaveLength(6);
     const values = SEARCH_PROVIDER_OPTIONS.map((e) => e.value);
-    expect(values).toEqual(["brave", "gemini", "grok", "kimi", "perplexity"]);
+    expect(values).toEqual(["openai", "brave", "gemini", "grok", "kimi", "perplexity"]);
   });
 });

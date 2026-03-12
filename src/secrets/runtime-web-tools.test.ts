@@ -4,7 +4,7 @@ import * as secretResolve from "./resolve.js";
 import { createResolverContext } from "./runtime-shared.js";
 import { resolveRuntimeWebTools } from "./runtime-web-tools.js";
 
-type ProviderUnderTest = "brave" | "gemini" | "grok" | "kimi" | "perplexity";
+type ProviderUnderTest = "openai" | "brave" | "gemini" | "grok" | "kimi" | "perplexity";
 
 function asConfig(value: unknown): OpenClawConfig {
   return value as OpenClawConfig;
@@ -35,6 +35,10 @@ function createProviderSecretRefConfig(
   };
   if (provider === "brave") {
     search.apiKey = { source: "env", provider: "default", id: envRefId };
+  } else if (provider === "openai") {
+    search.openai = {
+      apiKey: { source: "env", provider: "default", id: envRefId },
+    };
   } else {
     search[provider] = {
       apiKey: { source: "env", provider: "default", id: envRefId },
@@ -52,6 +56,9 @@ function createProviderSecretRefConfig(
 function readProviderKey(config: OpenClawConfig, provider: ProviderUnderTest): unknown {
   if (provider === "brave") {
     return config.tools?.web?.search?.apiKey;
+  }
+  if (provider === "openai") {
+    return config.tools?.web?.search?.openai?.apiKey;
   }
   if (provider === "gemini") {
     return config.tools?.web?.search?.gemini?.apiKey;
@@ -71,6 +78,11 @@ describe("runtime web tools resolution", () => {
   });
 
   it.each([
+    {
+      provider: "openai" as const,
+      envRefId: "OPENAI_PROVIDER_REF",
+      resolvedKey: "openai-provider-key",
+    },
     {
       provider: "brave" as const,
       envRefId: "BRAVE_PROVIDER_REF",
@@ -126,6 +138,9 @@ describe("runtime web tools resolution", () => {
         tools: {
           web: {
             search: {
+              openai: {
+                apiKey: { source: "env", provider: "default", id: "OPENAI_REF" },
+              },
               apiKey: { source: "env", provider: "default", id: "BRAVE_REF" },
               gemini: {
                 apiKey: { source: "env", provider: "default", id: "GEMINI_REF" },
@@ -144,6 +159,7 @@ describe("runtime web tools resolution", () => {
         },
       }),
       env: {
+        OPENAI_REF: "openai-precedence-key",
         BRAVE_REF: "brave-precedence-key",
         GEMINI_REF: "gemini-precedence-key",
         GROK_REF: "grok-precedence-key",
@@ -153,10 +169,11 @@ describe("runtime web tools resolution", () => {
     });
 
     expect(metadata.search.providerSource).toBe("auto-detect");
-    expect(metadata.search.selectedProvider).toBe("brave");
-    expect(resolvedConfig.tools?.web?.search?.apiKey).toBe("brave-precedence-key");
+    expect(metadata.search.selectedProvider).toBe("openai");
+    expect(resolvedConfig.tools?.web?.search?.openai?.apiKey).toBe("openai-precedence-key");
     expect(context.warnings).toEqual(
       expect.arrayContaining([
+        expect.objectContaining({ path: "tools.web.search.apiKey" }),
         expect.objectContaining({ path: "tools.web.search.gemini.apiKey" }),
         expect.objectContaining({ path: "tools.web.search.grok.apiKey" }),
         expect.objectContaining({ path: "tools.web.search.kimi.apiKey" }),
