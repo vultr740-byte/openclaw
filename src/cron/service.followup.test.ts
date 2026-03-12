@@ -25,7 +25,7 @@ describe("CronService followup jobs", () => {
   it("removes followup job after non-heartbeat reply", async () => {
     const store = await makeStorePath();
     const runIsolatedAgentJob = vi.fn(async () => ({
-      status: "ok",
+      status: "ok" as const,
       summary: "done",
       heartbeatOnly: false,
     }));
@@ -40,6 +40,7 @@ describe("CronService followup jobs", () => {
     await cron.start();
     const job = await cron.add({
       name: "followup",
+      enabled: true,
       schedule: { kind: "every", everyMs: 60_000, anchorMs: Date.now() },
       sessionTarget: "isolated",
       wakeMode: "next-heartbeat",
@@ -61,7 +62,7 @@ describe("CronService followup jobs", () => {
   it("keeps followup job when reply is heartbeat-only", async () => {
     const store = await makeStorePath();
     const runIsolatedAgentJob = vi.fn(async () => ({
-      status: "ok",
+      status: "ok" as const,
       summary: "waiting",
       heartbeatOnly: true,
     }));
@@ -76,6 +77,7 @@ describe("CronService followup jobs", () => {
     await cron.start();
     const job = await cron.add({
       name: "followup-wait",
+      enabled: true,
       schedule: { kind: "every", everyMs: 60_000, anchorMs: Date.now() },
       sessionTarget: "isolated",
       wakeMode: "next-heartbeat",
@@ -96,7 +98,7 @@ describe("CronService followup jobs", () => {
 
   it("removes expired followup job without running", async () => {
     const store = await makeStorePath();
-    const runIsolatedAgentJob = vi.fn(async () => ({ status: "ok" }));
+    const runIsolatedAgentJob = vi.fn(async () => ({ status: "ok" as const }));
     const cron = new CronService({
       cronEnabled: true,
       storePath: store.storePath,
@@ -108,6 +110,7 @@ describe("CronService followup jobs", () => {
     await cron.start();
     const job = await cron.add({
       name: "followup-expired",
+      enabled: true,
       schedule: { kind: "every", everyMs: 60_000, anchorMs: Date.now() },
       sessionTarget: "isolated",
       wakeMode: "next-heartbeat",

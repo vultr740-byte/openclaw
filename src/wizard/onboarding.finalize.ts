@@ -168,7 +168,6 @@ export async function finalizeOnboardingWizard(
         const { programArguments, workingDirectory, environment } = await buildGatewayInstallPlan({
           env: process.env,
           port: settings.port,
-          token: settings.gatewayToken,
           runtime: daemonRuntime,
           warn: (message, title) => prompter.note(message, title),
           config: nextConfig,
@@ -455,15 +454,23 @@ export async function finalizeOnboardingWizard(
   }
 
   const webSearchConfig = nextConfig.tools?.web?.search;
-  const openaiKey = (webSearchConfig?.openai?.apiKey ?? "").trim();
-  const openaiModelKey = (nextConfig.models?.providers?.openai?.apiKey ?? "").trim();
+  const openaiKey =
+    typeof webSearchConfig?.openai?.apiKey === "string" ? webSearchConfig.openai.apiKey.trim() : "";
+  const openaiModelKey =
+    typeof nextConfig.models?.providers?.openai?.apiKey === "string"
+      ? nextConfig.models.providers.openai.apiKey.trim()
+      : "";
   const openaiEnv = (process.env.OPENAI_API_KEY ?? "").trim();
-  const braveKey = (webSearchConfig?.apiKey ?? "").trim();
+  const braveKey = typeof webSearchConfig?.apiKey === "string" ? webSearchConfig.apiKey.trim() : "";
   const braveEnv = (process.env.BRAVE_API_KEY ?? "").trim();
-  const perplexityKey = (webSearchConfig?.perplexity?.apiKey ?? "").trim();
+  const perplexityKey =
+    typeof webSearchConfig?.perplexity?.apiKey === "string"
+      ? webSearchConfig.perplexity.apiKey.trim()
+      : "";
   const perplexityEnv = (process.env.PERPLEXITY_API_KEY ?? "").trim();
   const openRouterEnv = (process.env.OPENROUTER_API_KEY ?? "").trim();
-  const grokKey = (webSearchConfig?.grok?.apiKey ?? "").trim();
+  const grokKey =
+    typeof webSearchConfig?.grok?.apiKey === "string" ? webSearchConfig.grok.apiKey.trim() : "";
   const grokEnv = (process.env.XAI_API_KEY ?? "").trim();
   const provider =
     typeof webSearchConfig?.provider === "string" && webSearchConfig.provider.trim()

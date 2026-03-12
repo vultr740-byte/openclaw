@@ -99,6 +99,7 @@ export async function runCronIsolatedAgentTurn(params: {
   sessionKey: string;
   agentId?: string;
   lane?: string;
+  deliveryContract?: "cron-owned" | "shared";
 }): Promise<RunCronAgentTurnResult> {
   const abortSignal = params.abortSignal ?? params.signal;
   const isAborted = () => abortSignal?.aborted === true;
@@ -333,6 +334,8 @@ export async function runCronIsolatedAgentTurn(params: {
   const agentPayload = params.job.payload.kind === "agentTurn" ? params.job.payload : null;
   const deliveryPlan = resolveCronDeliveryPlan(params.job);
   const deliveryRequested = deliveryPlan.requested;
+  const shouldAllowMessagingToolWithoutDelivery =
+    params.deliveryContract === "shared" && deliveryPlan.mode === "none";
 
   const resolvedDelivery = await resolveDeliveryTarget(cfgWithAgentDefaults, agentId, {
     channel: deliveryPlan.channel ?? "last",
@@ -516,7 +519,9 @@ export async function runCronIsolatedAgentTurn(params: {
           // was successfully resolved. When resolution fails the agent should not
           // be blocked by a target it cannot satisfy (#27898).
           requireExplicitMessageTarget: deliveryRequested && resolvedDelivery.ok,
-          disableMessageTool: deliveryRequested || deliveryPlan.mode === "none",
+          disableMessageTool:
+            deliveryRequested ||
+            (!shouldAllowMessagingToolWithoutDelivery && deliveryPlan.mode === "none"),
           abortSignal,
         });
       },

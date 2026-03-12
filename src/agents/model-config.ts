@@ -1,10 +1,10 @@
 import type { OpenClawConfig } from "../config/config.js";
-import type { AgentModelEntryConfig } from "../config/types.agent-defaults.js";
 import {
   MissingEnvVarError,
   containsEnvVarReference,
   resolveConfigEnvVars,
 } from "../config/env-substitution.js";
+import type { AgentModelEntryConfig } from "../config/types.agent-defaults.js";
 const toModelKey = (provider: string, model: string) => `${provider}/${model}`;
 
 function resolveConfigKeyEnv(raw: string, env: NodeJS.ProcessEnv = process.env): string {

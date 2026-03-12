@@ -10,7 +10,7 @@ import type { RuntimeEnv } from "../runtime.js";
 import type { WizardPrompter } from "../wizard/prompts.js";
 import type { SecretInputMode } from "./onboard-types.js";
 
-export type SearchProvider = "brave" | "gemini" | "grok" | "kimi" | "perplexity";
+export type SearchProvider = "openai" | "brave" | "gemini" | "grok" | "kimi" | "perplexity";
 
 type SearchProviderEntry = {
   value: SearchProvider;
@@ -22,6 +22,14 @@ type SearchProviderEntry = {
 };
 
 export const SEARCH_PROVIDER_OPTIONS: readonly SearchProviderEntry[] = [
+  {
+    value: "openai",
+    label: "OpenAI web_search",
+    hint: "OpenAI hosted web_search tool",
+    envKeys: ["OPENAI_API_KEY"],
+    placeholder: "sk-...",
+    signupUrl: "https://platform.openai.com/account/api-keys",
+  },
   {
     value: "brave",
     label: "Brave Search",
@@ -71,6 +79,8 @@ export function hasKeyInEnv(entry: SearchProviderEntry): boolean {
 function rawKeyValue(config: OpenClawConfig, provider: SearchProvider): unknown {
   const search = config.tools?.web?.search;
   switch (provider) {
+    case "openai":
+      return search?.openai?.apiKey ?? config.models?.providers?.openai?.apiKey;
     case "brave":
       return search?.apiKey;
     case "gemini":
@@ -129,6 +139,12 @@ export function applySearchKey(
 ): OpenClawConfig {
   const search = { ...config.tools?.web?.search, provider, enabled: true };
   switch (provider) {
+    case "openai":
+      search.openai = {
+        ...search.openai,
+        apiKey: typeof key === "string" ? key : undefined,
+      };
+      break;
     case "brave":
       search.apiKey = key;
       break;

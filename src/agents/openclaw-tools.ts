@@ -79,6 +79,8 @@ export function createOpenClawTools(options?: {
   senderIsOwner?: boolean;
   /** Ephemeral session UUID — regenerated on /new and /reset. */
   sessionId?: string;
+  /** Allow node.invoke media commands that return large payloads. */
+  allowMediaInvokeCommands?: boolean;
 }): AnyAgentTool[] {
   const workspaceDir = resolveWorkspaceRoot(options?.workspaceDir);
   const spawnWorkspaceDir = resolveWorkspaceRoot(
@@ -153,6 +155,7 @@ export function createOpenClawTools(options?: {
       currentChannelId: options?.currentChannelId,
       currentThreadTs: options?.currentThreadTs,
       config: options?.config,
+      allowMediaInvokeCommands: options?.allowMediaInvokeCommands,
     }),
     createCronTool({
       agentSessionKey: options?.agentSessionKey,

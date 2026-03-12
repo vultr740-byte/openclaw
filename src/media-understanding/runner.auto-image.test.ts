@@ -46,7 +46,7 @@ describe("runCapability auto image entries", () => {
               {
                 id: "anthropic",
                 capabilities: ["image"],
-                describeImage: async (req) => {
+                describeImage: async (req: { model: string }) => {
                   seenModel = req.model;
                   return { text: "ok", model: req.model };
                 },

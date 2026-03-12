@@ -2,16 +2,12 @@ import { describe, expect, it, vi } from "vitest";
 import type { OpenClawConfig } from "../../../config/config.js";
 import { resolveOllamaBaseUrlForRun } from "../../ollama-stream.js";
 import {
-  buildAfterTurnRuntimeContext,
-  composeSystemPromptWithHookContext,
   isOllamaCompatProvider,
-  prependSystemPromptAddition,
   resolveAttemptFsWorkspaceOnly,
   resolveOllamaCompatNumCtxEnabled,
   resolvePromptBuildHookResult,
   resolvePromptModeForSession,
   shouldInjectOllamaCompatNumCtx,
-  decodeHtmlEntitiesInObject,
   wrapOllamaCompatNumCtx,
   wrapStreamFnTrimToolCallNames,
 } from "./attempt.js";
@@ -102,31 +98,6 @@ describe("resolvePromptBuildHookResult", () => {
     expect(result.prependContext).toBe("prompt context\n\nlegacy context");
     expect(result.prependSystemContext).toBe("prompt prepend\n\nlegacy prepend");
     expect(result.appendSystemContext).toBe("prompt append\n\nlegacy append");
-  });
-});
-
-describe("composeSystemPromptWithHookContext", () => {
-  it("returns undefined when no hook system context is provided", () => {
-    expect(composeSystemPromptWithHookContext({ baseSystemPrompt: "base" })).toBeUndefined();
-  });
-
-  it("builds prepend/base/append system prompt order", () => {
-    expect(
-      composeSystemPromptWithHookContext({
-        baseSystemPrompt: "  base system  ",
-        prependSystemContext: "  prepend  ",
-        appendSystemContext: "  append  ",
-      }),
-    ).toBe("prepend\n\nbase system\n\nappend");
-  });
-
-  it("avoids blank separators when base system prompt is empty", () => {
-    expect(
-      composeSystemPromptWithHookContext({
-        baseSystemPrompt: "   ",
-        appendSystemContext: "  append only  ",
-      }),
-    ).toBe("append only");
   });
 });
 
@@ -584,160 +555,5 @@ describe("shouldInjectOllamaCompatNumCtx", () => {
         providerId: "ollama",
       }),
     ).toBe(false);
-  });
-});
-
-describe("decodeHtmlEntitiesInObject", () => {
-  it("decodes HTML entities in string values", () => {
-    const result = decodeHtmlEntitiesInObject(
-      "source .env &amp;&amp; psql &quot;$DB&quot; -c &lt;query&gt;",
-    );
-    expect(result).toBe('source .env && psql "$DB" -c <query>');
-  });
-
-  it("recursively decodes nested objects", () => {
-    const input = {
-      command: "cd ~/dev &amp;&amp; npm run build",
-      args: ["--flag=&quot;value&quot;", "&lt;input&gt;"],
-      nested: { deep: "a &amp; b" },
-    };
-    const result = decodeHtmlEntitiesInObject(input) as Record<string, unknown>;
-    expect(result.command).toBe("cd ~/dev && npm run build");
-    expect((result.args as string[])[0]).toBe('--flag="value"');
-    expect((result.args as string[])[1]).toBe("<input>");
-    expect((result.nested as Record<string, string>).deep).toBe("a & b");
-  });
-
-  it("passes through non-string primitives unchanged", () => {
-    expect(decodeHtmlEntitiesInObject(42)).toBe(42);
-    expect(decodeHtmlEntitiesInObject(null)).toBe(null);
-    expect(decodeHtmlEntitiesInObject(true)).toBe(true);
-    expect(decodeHtmlEntitiesInObject(undefined)).toBe(undefined);
-  });
-
-  it("returns strings without entities unchanged", () => {
-    const input = "plain string with no entities";
-    expect(decodeHtmlEntitiesInObject(input)).toBe(input);
-  });
-
-  it("decodes numeric character references", () => {
-    expect(decodeHtmlEntitiesInObject("&#39;hello&#39;")).toBe("'hello'");
-    expect(decodeHtmlEntitiesInObject("&#x27;world&#x27;")).toBe("'world'");
-  });
-});
-describe("prependSystemPromptAddition", () => {
-  it("prepends context-engine addition to the system prompt", () => {
-    const result = prependSystemPromptAddition({
-      systemPrompt: "base system",
-      systemPromptAddition: "extra behavior",
-    });
-
-    expect(result).toBe("extra behavior\n\nbase system");
-  });
-
-  it("returns the original system prompt when no addition is provided", () => {
-    const result = prependSystemPromptAddition({
-      systemPrompt: "base system",
-    });
-
-    expect(result).toBe("base system");
-  });
-});
-
-describe("buildAfterTurnRuntimeContext", () => {
-  it("uses primary model when compaction.model is not set", () => {
-    const legacy = buildAfterTurnRuntimeContext({
-      attempt: {
-        sessionKey: "agent:main:session:abc",
-        messageChannel: "slack",
-        messageProvider: "slack",
-        agentAccountId: "acct-1",
-        authProfileId: "openai:p1",
-        config: {} as OpenClawConfig,
-        skillsSnapshot: undefined,
-        senderIsOwner: true,
-        provider: "openai-codex",
-        modelId: "gpt-5.3-codex",
-        thinkLevel: "off",
-        reasoningLevel: "on",
-        extraSystemPrompt: "extra",
-        ownerNumbers: ["+15555550123"],
-      },
-      workspaceDir: "/tmp/workspace",
-      agentDir: "/tmp/agent",
-    });
-
-    expect(legacy).toMatchObject({
-      provider: "openai-codex",
-      model: "gpt-5.3-codex",
-    });
-  });
-
-  it("passes primary model through even when compaction.model is set (override resolved in compactDirect)", () => {
-    const legacy = buildAfterTurnRuntimeContext({
-      attempt: {
-        sessionKey: "agent:main:session:abc",
-        messageChannel: "slack",
-        messageProvider: "slack",
-        agentAccountId: "acct-1",
-        authProfileId: "openai:p1",
-        config: {
-          agents: {
-            defaults: {
-              compaction: {
-                model: "openrouter/anthropic/claude-sonnet-4-5",
-              },
-            },
-          },
-        } as OpenClawConfig,
-        skillsSnapshot: undefined,
-        senderIsOwner: true,
-        provider: "openai-codex",
-        modelId: "gpt-5.3-codex",
-        thinkLevel: "off",
-        reasoningLevel: "on",
-        extraSystemPrompt: "extra",
-        ownerNumbers: ["+15555550123"],
-      },
-      workspaceDir: "/tmp/workspace",
-      agentDir: "/tmp/agent",
-    });
-
-    // buildAfterTurnLegacyCompactionParams no longer resolves the override;
-    // compactEmbeddedPiSessionDirect does it centrally for both auto + manual paths.
-    expect(legacy).toMatchObject({
-      provider: "openai-codex",
-      model: "gpt-5.3-codex",
-    });
-  });
-  it("includes resolved auth profile fields for context-engine afterTurn compaction", () => {
-    const legacy = buildAfterTurnRuntimeContext({
-      attempt: {
-        sessionKey: "agent:main:session:abc",
-        messageChannel: "slack",
-        messageProvider: "slack",
-        agentAccountId: "acct-1",
-        authProfileId: "openai:p1",
-        config: { plugins: { slots: { contextEngine: "lossless-claw" } } } as OpenClawConfig,
-        skillsSnapshot: undefined,
-        senderIsOwner: true,
-        provider: "openai-codex",
-        modelId: "gpt-5.3-codex",
-        thinkLevel: "off",
-        reasoningLevel: "on",
-        extraSystemPrompt: "extra",
-        ownerNumbers: ["+15555550123"],
-      },
-      workspaceDir: "/tmp/workspace",
-      agentDir: "/tmp/agent",
-    });
-
-    expect(legacy).toMatchObject({
-      authProfileId: "openai:p1",
-      provider: "openai-codex",
-      model: "gpt-5.3-codex",
-      workspaceDir: "/tmp/workspace",
-      agentDir: "/tmp/agent",
-    });
   });
 });

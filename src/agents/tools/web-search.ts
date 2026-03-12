@@ -1937,6 +1937,7 @@ export const __testing = {
   resolvePerplexityBaseUrl,
   isDirectPerplexityBaseUrl,
   resolvePerplexityRequestModel,
+  SEARCH_CACHE,
   normalizeBraveLanguageParams,
   normalizeFreshness,
   normalizeToIsoDate,

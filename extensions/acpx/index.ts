@@ -1,4 +1,4 @@
-import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
+import type { OpenClawPluginApi } from "openclaw/plugin-sdk/acpx";
 import { createAcpxPluginConfigSchema } from "./src/config.ts";
 import { createAcpxRuntimeService } from "./src/service.ts";
 

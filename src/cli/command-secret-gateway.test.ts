@@ -262,7 +262,7 @@ describe("resolveCommandSecretRefsViaGateway", () => {
             web: {
               fetch: {
                 firecrawl: {
-                  apiKey: { source: "env", provider: "default", id: envKey },
+                  apiKey: "firecrawl-local-fallback-key",
                 },
               },
             },

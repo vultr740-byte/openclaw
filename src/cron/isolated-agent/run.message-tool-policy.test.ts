@@ -26,6 +26,7 @@ function makeParams() {
     } as never,
     message: "send a message",
     sessionKey: "cron:message-tool-policy",
+    deliveryContract: undefined,
   };
 }
 
