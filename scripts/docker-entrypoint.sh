@@ -20,6 +20,22 @@ if [ "${OPENCLAW_RUN_AS_ROOT:-}" = "1" ]; then
   runtime_owner="root:root"
 fi
 
+run_as_runtime_user() {
+  if [ "$(id -u)" = "0" ] && [ "${OPENCLAW_RUN_AS_ROOT:-}" != "1" ]; then
+    gosu node "$@"
+    return
+  fi
+  "$@"
+}
+
+resolve_bootstrap_channels() {
+  if [ -n "${OPENCLAW_BOOTSTRAP_CHANNELS:-}" ]; then
+    printf '%s' "$OPENCLAW_BOOTSTRAP_CHANNELS"
+    return
+  fi
+  printf '%s' "${OPENCLAW_BOOTSTRAP_CHANNEL:-}"
+}
+
 should_inject_bind=false
 has_bind=false
 for arg in "$@"; do
@@ -58,6 +74,15 @@ ensure_legacy_workspace() {
   if [ "$(id -u)" = "0" ]; then
     chown -R node:node "$legacy_dir" || true
   fi
+}
+
+bootstrap_channels() {
+  local channels
+  channels="$(resolve_bootstrap_channels)"
+  if [ -z "$channels" ]; then
+    return 0
+  fi
+  run_as_runtime_user openclaw channels bootstrap --channels "$channels"
 }
 
 bootstrap_config() {
@@ -387,6 +412,7 @@ if [ "$(id -u)" = "0" ]; then
   ensure_legacy_workspace
   chown -R "$runtime_owner" /data
   bootstrap_config
+  bootstrap_channels
   if [ "${OPENCLAW_RUN_AS_ROOT:-}" = "1" ]; then
     exec "$@" "${bind_args[@]}"
   fi
@@ -396,4 +422,5 @@ fi
 ensure_workspace
 ensure_legacy_workspace
 bootstrap_config
+bootstrap_channels
 exec "$@" "${bind_args[@]}"

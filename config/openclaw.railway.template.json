@@ -65,10 +65,7 @@
       "token": "${OPENCLAW_GATEWAY_TOKEN}"
     },
     "controlUi": {
-      "enabled": true,
-      "basePath": "/webchat",
-      "root": "/app/packages/webchat/dist",
-      "allowedOrigins": ["https://${RAILWAY_STATIC_URL}"]
+      "enabled": false
     }
   },
   "channels": {

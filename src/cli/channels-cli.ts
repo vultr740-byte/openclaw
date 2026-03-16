@@ -1,6 +1,7 @@
 import type { Command } from "commander";
 import {
   channelsAddCommand,
+  channelsBootstrapCommand,
   channelsCapabilitiesCommand,
   channelsListCommand,
   channelsLogsCommand,
@@ -202,6 +203,21 @@ export function registerChannelsCli(program: Command) {
       await runChannelsCommand(async () => {
         const hasFlags = hasExplicitOptions(command, optionNamesAdd);
         await channelsAddCommand(opts, defaultRuntime, { hasFlags });
+      });
+    });
+
+  channels
+    .command("bootstrap")
+    .description("Bootstrap runtime-managed channels from env (internal)")
+    .requiredOption("--channels <list>", "Public channel ids (comma-separated)")
+    .action(async (opts) => {
+      await runChannelsCommand(async () => {
+        await channelsBootstrapCommand(
+          {
+            channels: opts.channels as string | undefined,
+          },
+          defaultRuntime,
+        );
       });
     });
 

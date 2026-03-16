@@ -1,5 +1,7 @@
 export type { ChannelsAddOptions } from "./channels/add.js";
 export { channelsAddCommand } from "./channels/add.js";
+export type { ChannelsBootstrapOptions } from "./channels/bootstrap.js";
+export { channelsBootstrapCommand } from "./channels/bootstrap.js";
 export type { ChannelsCapabilitiesOptions } from "./channels/capabilities.js";
 export { channelsCapabilitiesCommand } from "./channels/capabilities.js";
 export type { ChannelsListOptions } from "./channels/list.js";

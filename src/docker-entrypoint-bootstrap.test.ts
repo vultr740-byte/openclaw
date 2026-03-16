@@ -1,5 +1,13 @@
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -169,5 +177,89 @@ describe("docker-entrypoint telegram bootstrap", () => {
     expect(nextConfig.channels?.telegram?.enabled).toBe(true);
     expect(nextConfig.channels?.telegram?.dmPolicy).toBe("allowlist");
     expect(nextConfig.channels?.telegram?.allowFrom).toEqual(["123456789"]);
+  });
+});
+
+function runEntrypointBootstrapFunctions(params: { env?: Record<string, string | undefined> }) {
+  const dir = mkdtempSync(path.join(os.tmpdir(), "openclaw-entrypoint-shell-test-"));
+  createdTempDirs.push(dir);
+
+  const binDir = path.join(dir, "bin");
+  mkdirSync(binDir, { recursive: true });
+  const invocationPath = path.join(dir, "openclaw-invocations.jsonl");
+  const openclawScript = path.join(binDir, "openclaw");
+  writeFileSync(
+    openclawScript,
+    [
+      "#!/usr/bin/env node",
+      'const fs = require("node:fs");',
+      "const payload = {",
+      "  argv: process.argv.slice(2),",
+      "  env: {",
+      "    QQ_APP_ID: process.env.QQ_APP_ID ?? null,",
+      "    QQ_APP_SECRET: process.env.QQ_APP_SECRET ?? null,",
+      "    QQBOT_APP_ID: process.env.QQBOT_APP_ID ?? null,",
+      "    QQBOT_CLIENT_SECRET: process.env.QQBOT_CLIENT_SECRET ?? null,",
+      "  },",
+      "};",
+      'fs.appendFileSync(process.env.OPENCLAW_TEST_BOOTSTRAP_LOG, JSON.stringify(payload) + "\\n");',
+      "",
+    ].join("\n"),
+  );
+  chmodSync(openclawScript, 0o755);
+
+  const entrypointSource = readFileSync(
+    path.join(process.cwd(), "scripts/docker-entrypoint.sh"),
+    "utf8",
+  );
+  const preludeMatch = entrypointSource.match(/^([\s\S]*?)\nif \[ "\$\(id -u\)" = "0" \]; then\n/);
+  expect(preludeMatch, "failed to find shell prelude in scripts/docker-entrypoint.sh").toBeTruthy();
+  const prelude = preludeMatch ? preludeMatch[1] : "";
+
+  const result = spawnSync("bash", ["-s"], {
+    cwd: process.cwd(),
+    env: {
+      ...process.env,
+      PATH: `${binDir}:${process.env.PATH ?? ""}`,
+      OPENCLAW_TEST_BOOTSTRAP_LOG: invocationPath,
+      ...params.env,
+    },
+    encoding: "utf8",
+    input: `${prelude}\nbootstrap_channels\n`,
+  });
+
+  const invocations = existsSync(invocationPath)
+    ? readFileSync(invocationPath, "utf8")
+        .trim()
+        .split("\n")
+        .filter(Boolean)
+        .map((line) => JSON.parse(line) as { argv: string[]; env: Record<string, string | null> })
+    : [];
+
+  return { result, invocations };
+}
+
+describe("docker-entrypoint channel bootstrap", () => {
+  it("calls the internal bootstrap command with public QQ env vars", () => {
+    const { result, invocations } = runEntrypointBootstrapFunctions({
+      env: {
+        OPENCLAW_BOOTSTRAP_CHANNEL: "qq",
+        QQ_APP_ID: "qq-app-id-value",
+        QQ_APP_SECRET: "qq-app-secret-value",
+      },
+    });
+
+    expect(result.status, result.stderr || result.stdout).toBe(0);
+    expect(invocations).toEqual([
+      {
+        argv: ["channels", "bootstrap", "--channels", "qq"],
+        env: {
+          QQ_APP_ID: "qq-app-id-value",
+          QQ_APP_SECRET: "qq-app-secret-value",
+          QQBOT_APP_ID: null,
+          QQBOT_CLIENT_SECRET: null,
+        },
+      },
+    ]);
   });
 });
