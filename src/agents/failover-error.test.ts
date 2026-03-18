@@ -64,6 +64,9 @@ describe("failover-error", () => {
         message: "HTTP 402: You have exceeded your current quota. Please add more credits.",
       }),
     ).toBe("billing");
+    expect(resolveFailoverReasonFromError({ message: "402 status code (no body)" })).toBe(
+      "billing",
+    );
     expect(resolveFailoverReasonFromError({ statusCode: "429" })).toBe("rate_limit");
     expect(resolveFailoverReasonFromError({ status: 403 })).toBe("auth");
     expect(resolveFailoverReasonFromError({ status: 408 })).toBe("timeout");

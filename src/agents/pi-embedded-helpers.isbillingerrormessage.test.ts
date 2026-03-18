@@ -167,6 +167,7 @@ describe("isBillingErrorMessage", () => {
   it("still matches real HTTP 402 billing errors", () => {
     const realErrors = [
       "HTTP 402 Payment Required",
+      "402 status code (no body)",
       "status: 402",
       "error code 402",
       "http 402",

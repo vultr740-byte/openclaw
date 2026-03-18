@@ -85,7 +85,7 @@ describe("buildEmbeddedRunPayloads", () => {
     expect(payloads.some((payload) => payload.text?.includes("request_id"))).toBe(false);
   });
 
-  it("includes provider and model context for billing errors", () => {
+  it("keeps billing error payloads generic without exposing provider or model", () => {
     const payloads = buildPayloads({
       lastAssistant: makeAssistant({
         model: "claude-3-5-sonnet",
@@ -98,6 +98,8 @@ describe("buildEmbeddedRunPayloads", () => {
 
     expect(payloads).toHaveLength(1);
     expect(payloads[0]?.text).toBe(formatBillingErrorMessage("Anthropic", "claude-3-5-sonnet"));
+    expect(payloads[0]?.text).not.toContain("Anthropic");
+    expect(payloads[0]?.text).not.toContain("claude-3-5-sonnet");
     expect(payloads[0]?.isError).toBe(true);
   });
 

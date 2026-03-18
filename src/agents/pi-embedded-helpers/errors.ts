@@ -27,14 +27,9 @@ export {
 const log = createSubsystemLogger("errors");
 
 export function formatBillingErrorMessage(provider?: string, model?: string): string {
-  const providerName = provider?.trim();
-  const modelName = model?.trim();
-  const providerLabel =
-    providerName && modelName ? `${providerName} (${modelName})` : providerName || undefined;
-  if (providerLabel) {
-    return `⚠️ ${providerLabel} returned a billing error — your API key has run out of credits or has an insufficient balance. Check your ${providerName} billing dashboard and top up or switch to a different API key.`;
-  }
-  return "⚠️ API provider returned a billing error — your API key has run out of credits or has an insufficient balance. Check your provider's billing dashboard and top up or switch to a different API key.";
+  void provider;
+  void model;
+  return "⚠️ Model balance is insufficient. Please top up and try again.";
 }
 
 export const BILLING_ERROR_USER_MESSAGE = formatBillingErrorMessage();
@@ -237,9 +232,9 @@ const RETRYABLE_402_SCOPED_RESULT_HINTS = [
   "exhausted",
 ] as const;
 const RAW_402_MARKER_RE =
-  /["']?(?:status|code)["']?\s*[:=]\s*402\b|\bhttp\s*402\b|\berror(?:\s+code)?\s*[:=]?\s*402\b|\b(?:got|returned|received)\s+(?:a\s+)?402\b|^\s*402\s+payment required\b/i;
+  /["']?(?:status|code)["']?\s*[:=]\s*402\b|\bhttp\s*402\b|\berror(?:\s+code)?\s*[:=]\s*402\b|\b(?:got|returned|received)\s+(?:a\s+)?402\b|^\s*402\s+(?:payment required|status code)\b/i;
 const LEADING_402_WRAPPER_RE =
-  /^(?:error[:\s-]+)?(?:(?:http\s*)?402(?:\s+payment required)?|payment required)(?:[:\s-]+|$)/i;
+  /^(?:error[:\s-]+)?(?:(?:http\s*)?402(?:\s+(?:payment required|status code))?|payment required)(?:[:\s-]+|$)/i;
 
 function includesAnyHint(text: string, hints: readonly string[]): boolean {
   return hints.some((hint) => text.includes(hint));

@@ -1279,7 +1279,9 @@ describe("runEmbeddedPiAgent auth profile rotation", () => {
         model: "mock-rotated",
       });
       expect(thrown).toBeInstanceOf(Error);
-      expect((thrown as Error).message).toContain("openai (mock-rotated) returned a billing error");
+      expect((thrown as Error).message).toContain(
+        "Model balance is insufficient. Please top up and try again.",
+      );
       expect(runEmbeddedAttemptMock).toHaveBeenCalledTimes(1);
     });
   });

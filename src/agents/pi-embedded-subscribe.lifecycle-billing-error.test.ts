@@ -16,7 +16,7 @@ describe("subscribeEmbeddedPiSession lifecycle billing errors", () => {
     return { emit, onAgentEvent };
   }
 
-  it("includes provider and model context in lifecycle billing errors", () => {
+  it("keeps lifecycle billing errors generic", () => {
     const { emit, onAgentEvent } = createAgentEventHarness({
       runId: "run-billing-error",
       sessionKey: "test-session",
@@ -31,6 +31,8 @@ describe("subscribeEmbeddedPiSession lifecycle billing errors", () => {
 
     const lifecycleError = findLifecycleErrorAgentEvent(onAgentEvent.mock.calls);
     expect(lifecycleError).toBeDefined();
-    expect(lifecycleError?.data?.error).toContain("Anthropic (claude-3-5-sonnet)");
+    expect(lifecycleError?.data?.error).toBe(
+      "⚠️ Model balance is insufficient. Please top up and try again.",
+    );
   });
 });

@@ -45,7 +45,7 @@ const ERROR_PATTERNS = {
     /\bunhandled stop reason:\s*(?:abort|error)\b/i,
   ],
   billing: [
-    /["']?(?:status|code)["']?\s*[:=]\s*402\b|\bhttp\s*402\b|\berror(?:\s+code)?\s*[:=]?\s*402\b|\b(?:got|returned|received)\s+(?:a\s+)?402\b|^\s*402\s+payment/i,
+    /["']?(?:status|code)["']?\s*[:=]\s*402\b|\bhttp\s*402\b|\berror(?:\s+code)?\s*[:=]?\s*402\b|\b(?:got|returned|received)\s+(?:a\s+)?402\b|^\s*402\s+(?:payment(?:\s+required)?|status\s+code)\b/i,
     "payment required",
     "insufficient credits",
     /insufficient[_ ]quota/i,
@@ -96,7 +96,7 @@ const ERROR_PATTERNS = {
 const BILLING_ERROR_HEAD_RE =
   /^(?:error[:\s-]+)?billing(?:\s+error)?(?:[:\s-]+|$)|^(?:error[:\s-]+)?(?:credit balance|insufficient credits?|payment required|http\s*402\b)/i;
 const BILLING_ERROR_HARD_402_RE =
-  /["']?(?:status|code)["']?\s*[:=]\s*402\b|\bhttp\s*402\b|\berror(?:\s+code)?\s*[:=]?\s*402\b|^\s*402\s+payment/i;
+  /["']?(?:status|code)["']?\s*[:=]\s*402\b|\bhttp\s*402\b|\berror(?:\s+code)?\s*[:=]?\s*402\b|^\s*402\s+(?:payment(?:\s+required)?|status\s+code)\b/i;
 const BILLING_ERROR_MAX_LENGTH = 512;
 
 function matchesErrorPatterns(raw: string, patterns: readonly ErrorPattern[]): boolean {
