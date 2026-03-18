@@ -133,6 +133,8 @@ openclaw gateway
 DISCORD_BOT_TOKEN=...
 ```
 
+        Bootstrap shortcut: `openclaw channels bootstrap --channels discord` (and Docker `OPENCLAW_BOOTSTRAP_CHANNEL=discord`) seeds a starter config with `dmPolicy: "open"`, `allowFrom: ["*"]`, and `groupPolicy: "disabled"`. That makes first-run DMs work without pairing or a user ID allowlist.
+
         SecretRef values are also supported for `channels.discord.token` (env/file/exec providers). See [Secrets Management](/gateway/secrets).
 
       </Tab>
@@ -141,6 +143,8 @@ DISCORD_BOT_TOKEN=...
   </Step>
 
   <Step title="Approve first DM pairing">
+    If you used the bootstrap starter config above, skip this step unless you later switch `dmPolicy` back to `pairing`.
+
     Wait until the gateway is running, then DM your bot in Discord. It will respond with a pairing code.
 
     <Tabs>

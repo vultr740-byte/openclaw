@@ -32,6 +32,14 @@ function resolveChannelSection(
   return isRecord(section) ? section : undefined;
 }
 
+function resolveNestedSection(
+  section: Record<string, unknown> | undefined,
+  key: string,
+): Record<string, unknown> | undefined {
+  const value = section?.[key];
+  return isRecord(value) ? value : undefined;
+}
+
 const bootstrapChannelEntries: BootstrapChannelEntry[] = [
   {
     publicId: "discord",
@@ -41,6 +49,13 @@ const bootstrapChannelEntries: BootstrapChannelEntry[] = [
     requiredEnv: ["DISCORD_BOT_TOKEN"],
     applyConfig: ({ cfg }) => {
       const existing = resolveChannelSection(cfg, "discord");
+      const existingDm = resolveNestedSection(existing, "dm");
+      const hasExplicitDmConfig =
+        typeof existing?.dmPolicy === "string" ||
+        Array.isArray(existing?.allowFrom) ||
+        existingDm !== undefined;
+      const hasExplicitGuildConfig =
+        typeof existing?.groupPolicy === "string" || existing?.guilds !== undefined;
       return {
         ...cfg,
         channels: {
@@ -49,6 +64,8 @@ const bootstrapChannelEntries: BootstrapChannelEntry[] = [
             ...existing,
             enabled: true,
             token: envRef("DISCORD_BOT_TOKEN"),
+            ...(hasExplicitDmConfig ? {} : { dmPolicy: "open", allowFrom: ["*"] }),
+            ...(hasExplicitGuildConfig ? {} : { groupPolicy: "disabled" }),
           },
         },
       };

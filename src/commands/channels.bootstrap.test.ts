@@ -241,11 +241,56 @@ describe("channelsBootstrapCommand", () => {
 
   it("writes env-backed Discord config refs without plugin install", async () => {
     process.env.DISCORD_BOT_TOKEN = "discord-token-value";
+    configMocks.readConfigFileSnapshotForWrite.mockResolvedValue(makeWriteSnapshot());
+
+    await channelsBootstrapCommand({ channels: "discord" }, runtime);
+
+    expect(installMocks.installPluginFromNpmSpec).not.toHaveBeenCalled();
+    expect(pluginLoaderState.loadOpenClawPlugins).not.toHaveBeenCalled();
+    expect(configMocks.writeConfigFile).toHaveBeenCalledTimes(1);
+
+    const writtenConfig = configMocks.writeConfigFile.mock.calls[0]?.[0] as {
+      channels?: {
+        discord?: {
+          enabled?: boolean;
+          dmPolicy?: string;
+          allowFrom?: string[];
+          groupPolicy?: string;
+          token?: string;
+        };
+      };
+    };
+
+    expect(writtenConfig.channels?.discord).toEqual({
+      dmPolicy: "open",
+      allowFrom: ["*"],
+      enabled: true,
+      groupPolicy: "disabled",
+      token: "${DISCORD_BOT_TOKEN}",
+    });
+    expect(JSON.stringify(writtenConfig)).not.toContain("discord-token-value");
+  });
+
+  it("preserves explicit Discord access config while bootstrapping env refs", async () => {
+    process.env.DISCORD_BOT_TOKEN = "discord-token-value";
     configMocks.readConfigFileSnapshotForWrite.mockResolvedValue(
       makeWriteSnapshot({
         channels: {
           discord: {
+            dm: {
+              policy: "pairing",
+              allowFrom: ["123456789012345678"],
+            },
             groupPolicy: "allowlist",
+            guilds: {
+              "987654321098765432": {
+                channels: {
+                  general: {
+                    allow: true,
+                  },
+                },
+              },
+            },
           },
         },
       }),
@@ -261,16 +306,39 @@ describe("channelsBootstrapCommand", () => {
       channels?: {
         discord?: {
           enabled?: boolean;
-          groupPolicy?: string;
           token?: string;
+          dm?: {
+            policy?: string;
+            allowFrom?: string[];
+          };
+          groupPolicy?: string;
+          guilds?: Record<
+            string,
+            {
+              channels?: Record<string, { allow?: boolean }>;
+            }
+          >;
         };
       };
     };
 
     expect(writtenConfig.channels?.discord).toEqual({
       enabled: true,
-      groupPolicy: "allowlist",
       token: "${DISCORD_BOT_TOKEN}",
+      dm: {
+        policy: "pairing",
+        allowFrom: ["123456789012345678"],
+      },
+      groupPolicy: "allowlist",
+      guilds: {
+        "987654321098765432": {
+          channels: {
+            general: {
+              allow: true,
+            },
+          },
+        },
+      },
     });
     expect(JSON.stringify(writtenConfig)).not.toContain("discord-token-value");
   });
