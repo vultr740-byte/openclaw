@@ -118,6 +118,7 @@ vi.mock("../plugins/loader.js", async (importOriginal) => {
 });
 
 const runtime = createTestRuntime();
+const originalDiscordBotToken = process.env.DISCORD_BOT_TOKEN;
 const originalQqAppId = process.env.QQ_APP_ID;
 const originalQqAppSecret = process.env.QQ_APP_SECRET;
 
@@ -150,6 +151,11 @@ describe("channelsBootstrapCommand", () => {
   });
 
   beforeEach(() => {
+    if (originalDiscordBotToken === undefined) {
+      delete process.env.DISCORD_BOT_TOKEN;
+    } else {
+      process.env.DISCORD_BOT_TOKEN = originalDiscordBotToken;
+    }
     if (originalQqAppId === undefined) {
       delete process.env.QQ_APP_ID;
     } else {
@@ -189,6 +195,20 @@ describe("channelsBootstrapCommand", () => {
     expect(configMocks.writeConfigFile).not.toHaveBeenCalled();
   });
 
+  it("fails fast when required Discord env vars are missing", async () => {
+    delete process.env.DISCORD_BOT_TOKEN;
+
+    await channelsBootstrapCommand({ channels: "discord" }, runtime);
+
+    expect(runtime.error).toHaveBeenCalledWith(
+      "Bootstrap channel discord requires env: DISCORD_BOT_TOKEN",
+    );
+    expect(runtime.exit).toHaveBeenCalledWith(1);
+    expect(configMocks.readConfigFileSnapshotForWrite).not.toHaveBeenCalled();
+    expect(installMocks.installPluginFromNpmSpec).not.toHaveBeenCalled();
+    expect(configMocks.writeConfigFile).not.toHaveBeenCalled();
+  });
+
   it("treats telegram bootstrap as a compatibility no-op", async () => {
     configMocks.readConfigFileSnapshotForWrite.mockResolvedValue(
       makeWriteSnapshot({
@@ -217,6 +237,42 @@ describe("channelsBootstrapCommand", () => {
     expect(runtime.exit).not.toHaveBeenCalled();
     expect(runtime.log).toHaveBeenCalledWith("Bootstrapped channel telegram (telegram).");
     expect(runtime.log).toHaveBeenCalledWith("Bootstrap config already up to date.");
+  });
+
+  it("writes env-backed Discord config refs without plugin install", async () => {
+    process.env.DISCORD_BOT_TOKEN = "discord-token-value";
+    configMocks.readConfigFileSnapshotForWrite.mockResolvedValue(
+      makeWriteSnapshot({
+        channels: {
+          discord: {
+            groupPolicy: "allowlist",
+          },
+        },
+      }),
+    );
+
+    await channelsBootstrapCommand({ channels: "discord" }, runtime);
+
+    expect(installMocks.installPluginFromNpmSpec).not.toHaveBeenCalled();
+    expect(pluginLoaderState.loadOpenClawPlugins).not.toHaveBeenCalled();
+    expect(configMocks.writeConfigFile).toHaveBeenCalledTimes(1);
+
+    const writtenConfig = configMocks.writeConfigFile.mock.calls[0]?.[0] as {
+      channels?: {
+        discord?: {
+          enabled?: boolean;
+          groupPolicy?: string;
+          token?: string;
+        };
+      };
+    };
+
+    expect(writtenConfig.channels?.discord).toEqual({
+      enabled: true,
+      groupPolicy: "allowlist",
+      token: "${DISCORD_BOT_TOKEN}",
+    });
+    expect(JSON.stringify(writtenConfig)).not.toContain("discord-token-value");
   });
 
   it("installs qqbot and writes env-backed config refs", async () => {

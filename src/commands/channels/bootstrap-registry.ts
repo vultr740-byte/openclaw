@@ -34,6 +34,27 @@ function resolveChannelSection(
 
 const bootstrapChannelEntries: BootstrapChannelEntry[] = [
   {
+    publicId: "discord",
+    channelId: "discord",
+    pluginId: "discord",
+    ensurePlugin: false,
+    requiredEnv: ["DISCORD_BOT_TOKEN"],
+    applyConfig: ({ cfg }) => {
+      const existing = resolveChannelSection(cfg, "discord");
+      return {
+        ...cfg,
+        channels: {
+          ...cfg.channels,
+          discord: {
+            ...existing,
+            enabled: true,
+            token: envRef("DISCORD_BOT_TOKEN"),
+          },
+        },
+      };
+    },
+  },
+  {
     publicId: "telegram",
     aliases: ["tg"],
     channelId: "telegram",

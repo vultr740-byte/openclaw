@@ -196,6 +196,7 @@ function runEntrypointBootstrapFunctions(params: { env?: Record<string, string |
       "const payload = {",
       "  argv: process.argv.slice(2),",
       "  env: {",
+      "    DISCORD_BOT_TOKEN: process.env.DISCORD_BOT_TOKEN ?? null,",
       "    QQ_APP_ID: process.env.QQ_APP_ID ?? null,",
       "    QQ_APP_SECRET: process.env.QQ_APP_SECRET ?? null,",
       "    QQBOT_APP_ID: process.env.QQBOT_APP_ID ?? null,",
@@ -240,6 +241,29 @@ function runEntrypointBootstrapFunctions(params: { env?: Record<string, string |
 }
 
 describe("docker-entrypoint channel bootstrap", () => {
+  it("calls the internal bootstrap command with public Discord env vars", () => {
+    const { result, invocations } = runEntrypointBootstrapFunctions({
+      env: {
+        OPENCLAW_BOOTSTRAP_CHANNEL: "discord",
+        DISCORD_BOT_TOKEN: "discord-token-value",
+      },
+    });
+
+    expect(result.status, result.stderr || result.stdout).toBe(0);
+    expect(invocations).toEqual([
+      {
+        argv: ["channels", "bootstrap", "--channels", "discord"],
+        env: {
+          DISCORD_BOT_TOKEN: "discord-token-value",
+          QQ_APP_ID: null,
+          QQ_APP_SECRET: null,
+          QQBOT_APP_ID: null,
+          QQBOT_CLIENT_SECRET: null,
+        },
+      },
+    ]);
+  });
+
   it("calls the internal bootstrap command with public QQ env vars", () => {
     const { result, invocations } = runEntrypointBootstrapFunctions({
       env: {
@@ -254,6 +278,7 @@ describe("docker-entrypoint channel bootstrap", () => {
       {
         argv: ["channels", "bootstrap", "--channels", "qq"],
         env: {
+          DISCORD_BOT_TOKEN: null,
           QQ_APP_ID: "qq-app-id-value",
           QQ_APP_SECRET: "qq-app-secret-value",
           QQBOT_APP_ID: null,
