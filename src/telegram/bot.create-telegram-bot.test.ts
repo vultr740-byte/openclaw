@@ -297,7 +297,7 @@ describe("createTelegramBot", () => {
     const getFileSpy = vi.fn(async () => ({ file_path: "photos/p1.jpg" }));
 
     try {
-      createTelegramBot({ token: "tok" });
+      createTelegramBot({ token: "tok", proxyFetch: fetchSpy as unknown as typeof fetch });
       const handler = getOnHandler("message") as (ctx: Record<string, unknown>) => Promise<void>;
 
       await handler({
@@ -338,7 +338,7 @@ describe("createTelegramBot", () => {
     const getFileSpy = vi.fn(async () => ({ file_path: "photos/p1.jpg" }));
 
     try {
-      createTelegramBot({ token: "tok" });
+      createTelegramBot({ token: "tok", proxyFetch: fetchSpy as unknown as typeof fetch });
       const handler = getOnHandler("message") as (ctx: Record<string, unknown>) => Promise<void>;
 
       await handler({
@@ -380,7 +380,11 @@ describe("createTelegramBot", () => {
     const getFileSpy = vi.fn(async () => ({ file_path: "photos/p1.jpg" }));
 
     try {
-      createTelegramBot({ token: "tok", testTimings: TELEGRAM_TEST_TIMINGS });
+      createTelegramBot({
+        token: "tok",
+        proxyFetch: fetchSpy as unknown as typeof fetch,
+        testTimings: TELEGRAM_TEST_TIMINGS,
+      });
       const handler = getOnHandler("message") as (ctx: Record<string, unknown>) => Promise<void>;
 
       await handler({
@@ -851,7 +855,7 @@ describe("createTelegramBot", () => {
     expect(payload.SessionKey).toBe("agent:opie:main");
   });
 
-  it("drops non-default account DMs without explicit bindings", async () => {
+  it("routes non-default account DMs to isolated per-account sessions without explicit bindings", async () => {
     loadConfig.mockReturnValue({
       channels: {
         telegram: {
@@ -880,7 +884,10 @@ describe("createTelegramBot", () => {
       getFile: async () => ({ download: async () => new Uint8Array() }),
     });
 
-    expect(replySpy).not.toHaveBeenCalled();
+    expect(replySpy).toHaveBeenCalledTimes(1);
+    const payload = replySpy.mock.calls[0][0];
+    expect(payload.AccountId).toBe("opie");
+    expect(payload.SessionKey).toBe("agent:main:telegram:opie:direct:999");
   });
 
   it("applies group mention overrides and fallback behavior", async () => {
@@ -1897,7 +1904,11 @@ describe("createTelegramBot", () => {
 
     const setTimeoutSpy = vi.spyOn(globalThis, "setTimeout");
     try {
-      createTelegramBot({ token: "tok", testTimings: TELEGRAM_TEST_TIMINGS });
+      createTelegramBot({
+        token: "tok",
+        proxyFetch: fetchSpy as unknown as typeof fetch,
+        testTimings: TELEGRAM_TEST_TIMINGS,
+      });
       const handler = getOnHandler("channel_post") as (
         ctx: Record<string, unknown>,
       ) => Promise<void>;
@@ -2036,7 +2047,11 @@ describe("createTelegramBot", () => {
         }),
     );
 
-    createTelegramBot({ token: "tok", mediaMaxMb: 0 });
+    createTelegramBot({
+      token: "tok",
+      proxyFetch: fetchSpy as unknown as typeof fetch,
+      mediaMaxMb: 0,
+    });
     const handler = getOnHandler("channel_post") as (ctx: Record<string, unknown>) => Promise<void>;
 
     await handler({
@@ -2068,7 +2083,7 @@ describe("createTelegramBot", () => {
       );
 
     try {
-      createTelegramBot({ token: "tok" });
+      createTelegramBot({ token: "tok", proxyFetch: fetchSpy as unknown as typeof fetch });
       const handler = getOnHandler("message") as (ctx: Record<string, unknown>) => Promise<void>;
 
       await handler({
@@ -2125,7 +2140,11 @@ describe("createTelegramBot", () => {
 
     const setTimeoutSpy = vi.spyOn(globalThis, "setTimeout");
     try {
-      createTelegramBot({ token: "tok", testTimings: TELEGRAM_TEST_TIMINGS });
+      createTelegramBot({
+        token: "tok",
+        proxyFetch: fetchSpy as unknown as typeof fetch,
+        testTimings: TELEGRAM_TEST_TIMINGS,
+      });
       const handler = getOnHandler("channel_post") as (
         ctx: Record<string, unknown>,
       ) => Promise<void>;
@@ -2211,7 +2230,11 @@ describe("createTelegramBot", () => {
 
     const setTimeoutSpy = vi.spyOn(globalThis, "setTimeout");
     try {
-      createTelegramBot({ token: "tok", testTimings: TELEGRAM_TEST_TIMINGS });
+      createTelegramBot({
+        token: "tok",
+        proxyFetch: fetchSpy as unknown as typeof fetch,
+        testTimings: TELEGRAM_TEST_TIMINGS,
+      });
       const handler = getOnHandler("channel_post") as (
         ctx: Record<string, unknown>,
       ) => Promise<void>;

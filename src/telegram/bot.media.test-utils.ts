@@ -45,10 +45,20 @@ export async function createBotHandlerWithOptions(options: {
 
   const runtimeError = options.runtimeError ?? vi.fn();
   const runtimeLog = options.runtimeLog ?? vi.fn();
+  const proxyFetch =
+    (options.proxyFetch ?? globalThis.fetch)
+      ? (input: RequestInfo | URL, init?: RequestInit) => {
+          const fetchImpl = options.proxyFetch ?? globalThis.fetch;
+          if (!fetchImpl) {
+            throw new Error("fetch is not available");
+          }
+          return fetchImpl(input, init);
+        }
+      : undefined;
   createTelegramBotRef({
     token: "tok",
     testTimings: TELEGRAM_TEST_TIMINGS,
-    ...(options.proxyFetch ? { proxyFetch: options.proxyFetch } : {}),
+    ...(proxyFetch ? { proxyFetch } : {}),
     runtime: {
       log: runtimeLog as (...data: unknown[]) => void,
       error: runtimeError as (...data: unknown[]) => void,

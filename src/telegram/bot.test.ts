@@ -730,7 +730,7 @@ describe("createTelegramBot", () => {
         }),
     );
     try {
-      createTelegramBot({ token: "tok" });
+      createTelegramBot({ token: "tok", proxyFetch: fetchSpy as unknown as typeof fetch });
       const handler = getOnHandler("message") as (ctx: Record<string, unknown>) => Promise<void>;
 
       await handler({
@@ -835,7 +835,7 @@ describe("createTelegramBot", () => {
     );
     const setTimeoutSpy = vi.spyOn(globalThis, "setTimeout");
     try {
-      createTelegramBot({ token: "tok" });
+      createTelegramBot({ token: "tok", proxyFetch: fetchSpy as unknown as typeof fetch });
       const handler = getOnHandler("message") as (ctx: Record<string, unknown>) => Promise<void>;
 
       await handler({
