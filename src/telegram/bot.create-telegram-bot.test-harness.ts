@@ -73,6 +73,22 @@ vi.mock("../pairing/pairing-store.js", () => ({
   upsertChannelPairingRequest,
 }));
 
+const { claimBootstrapDmOwner } = vi.hoisted(
+  (): {
+    claimBootstrapDmOwner: AnyAsyncMock;
+  } => ({
+    claimBootstrapDmOwner: vi.fn(async () => null),
+  }),
+);
+
+export function getClaimBootstrapDmOwnerMock(): AnyAsyncMock {
+  return claimBootstrapDmOwner;
+}
+
+vi.mock("../channels/bootstrap-owner-claim.js", () => ({
+  claimBootstrapDmOwner,
+}));
+
 const skillCommandsHoisted = vi.hoisted(() => ({
   listSkillCommandsForAgents: vi.fn(() => []),
 }));
@@ -277,6 +293,8 @@ export function makeForumGroupMessageCtx(params?: {
 
 beforeEach(() => {
   resetInboundDedupe();
+  claimBootstrapDmOwner.mockReset();
+  claimBootstrapDmOwner.mockResolvedValue(null);
   loadConfig.mockReset();
   loadConfig.mockReturnValue(DEFAULT_TELEGRAM_TEST_CONFIG);
   loadWebMedia.mockReset();

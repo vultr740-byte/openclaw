@@ -119,6 +119,9 @@ vi.mock("../plugins/loader.js", async (importOriginal) => {
 
 const runtime = createTestRuntime();
 const originalDiscordBotToken = process.env.DISCORD_BOT_TOKEN;
+const originalBootstrapChannel = process.env.OPENCLAW_BOOTSTRAP_CHANNEL;
+const originalBootstrapChannels = process.env.OPENCLAW_BOOTSTRAP_CHANNELS;
+const originalBootstrapOwnerMode = process.env.OPENCLAW_BOOTSTRAP_OWNER_MODE;
 const originalQqAppId = process.env.QQ_APP_ID;
 const originalQqAppSecret = process.env.QQ_APP_SECRET;
 
@@ -155,6 +158,21 @@ describe("channelsBootstrapCommand", () => {
       delete process.env.DISCORD_BOT_TOKEN;
     } else {
       process.env.DISCORD_BOT_TOKEN = originalDiscordBotToken;
+    }
+    if (originalBootstrapChannel === undefined) {
+      delete process.env.OPENCLAW_BOOTSTRAP_CHANNEL;
+    } else {
+      process.env.OPENCLAW_BOOTSTRAP_CHANNEL = originalBootstrapChannel;
+    }
+    if (originalBootstrapChannels === undefined) {
+      delete process.env.OPENCLAW_BOOTSTRAP_CHANNELS;
+    } else {
+      process.env.OPENCLAW_BOOTSTRAP_CHANNELS = originalBootstrapChannels;
+    }
+    if (originalBootstrapOwnerMode === undefined) {
+      delete process.env.OPENCLAW_BOOTSTRAP_OWNER_MODE;
+    } else {
+      process.env.OPENCLAW_BOOTSTRAP_OWNER_MODE = originalBootstrapOwnerMode;
     }
     if (originalQqAppId === undefined) {
       delete process.env.QQ_APP_ID;
@@ -269,6 +287,64 @@ describe("channelsBootstrapCommand", () => {
       token: "${DISCORD_BOT_TOKEN}",
     });
     expect(JSON.stringify(writtenConfig)).not.toContain("discord-token-value");
+  });
+
+  it("defaults bootstrapped Discord DMs to first-message owner claim flow", async () => {
+    process.env.DISCORD_BOT_TOKEN = "discord-token-value";
+    process.env.OPENCLAW_BOOTSTRAP_CHANNEL = "discord";
+    delete process.env.OPENCLAW_BOOTSTRAP_OWNER_MODE;
+    configMocks.readConfigFileSnapshotForWrite.mockResolvedValue(makeWriteSnapshot());
+
+    await channelsBootstrapCommand({ channels: "discord" }, runtime);
+
+    const writtenConfig = configMocks.writeConfigFile.mock.calls[0]?.[0] as {
+      channels?: {
+        discord?: {
+          enabled?: boolean;
+          dmPolicy?: string;
+          allowFrom?: string[];
+          groupPolicy?: string;
+          token?: string;
+        };
+      };
+    };
+
+    expect(writtenConfig.channels?.discord).toEqual({
+      dmPolicy: "pairing",
+      allowFrom: [],
+      enabled: true,
+      groupPolicy: "disabled",
+      token: "${DISCORD_BOT_TOKEN}",
+    });
+  });
+
+  it("keeps the legacy open Discord bootstrap when owner claim is explicitly disabled", async () => {
+    process.env.DISCORD_BOT_TOKEN = "discord-token-value";
+    process.env.OPENCLAW_BOOTSTRAP_CHANNEL = "discord";
+    process.env.OPENCLAW_BOOTSTRAP_OWNER_MODE = "off";
+    configMocks.readConfigFileSnapshotForWrite.mockResolvedValue(makeWriteSnapshot());
+
+    await channelsBootstrapCommand({ channels: "discord" }, runtime);
+
+    const writtenConfig = configMocks.writeConfigFile.mock.calls[0]?.[0] as {
+      channels?: {
+        discord?: {
+          enabled?: boolean;
+          dmPolicy?: string;
+          allowFrom?: string[];
+          groupPolicy?: string;
+          token?: string;
+        };
+      };
+    };
+
+    expect(writtenConfig.channels?.discord).toEqual({
+      dmPolicy: "open",
+      allowFrom: ["*"],
+      enabled: true,
+      groupPolicy: "disabled",
+      token: "${DISCORD_BOT_TOKEN}",
+    });
   });
 
   it("preserves explicit Discord access config while bootstrapping env refs", async () => {

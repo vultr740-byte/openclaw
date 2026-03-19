@@ -1,3 +1,4 @@
+import { resolveBootstrapOwnerClaimModeForChannel } from "../../channels/bootstrap-owner-claim.js";
 import type { ChannelPlugin } from "../../channels/plugins/types.js";
 import type { OpenClawConfig } from "../../config/config.js";
 import { isRecord } from "../../utils.js";
@@ -47,7 +48,7 @@ const bootstrapChannelEntries: BootstrapChannelEntry[] = [
     pluginId: "discord",
     ensurePlugin: false,
     requiredEnv: ["DISCORD_BOT_TOKEN"],
-    applyConfig: ({ cfg }) => {
+    applyConfig: ({ cfg, env }) => {
       const existing = resolveChannelSection(cfg, "discord");
       const existingDm = resolveNestedSection(existing, "dm");
       const hasExplicitDmConfig =
@@ -56,6 +57,10 @@ const bootstrapChannelEntries: BootstrapChannelEntry[] = [
         existingDm !== undefined;
       const hasExplicitGuildConfig =
         typeof existing?.groupPolicy === "string" || existing?.guilds !== undefined;
+      const defaultDmConfig =
+        resolveBootstrapOwnerClaimModeForChannel("discord", env) === "first-dm"
+          ? { dmPolicy: "pairing", allowFrom: [] }
+          : { dmPolicy: "open", allowFrom: ["*"] };
       return {
         ...cfg,
         channels: {
@@ -64,7 +69,7 @@ const bootstrapChannelEntries: BootstrapChannelEntry[] = [
             ...existing,
             enabled: true,
             token: envRef("DISCORD_BOT_TOKEN"),
-            ...(hasExplicitDmConfig ? {} : { dmPolicy: "open", allowFrom: ["*"] }),
+            ...(hasExplicitDmConfig ? {} : defaultDmConfig),
             ...(hasExplicitGuildConfig ? {} : { groupPolicy: "disabled" }),
           },
         },

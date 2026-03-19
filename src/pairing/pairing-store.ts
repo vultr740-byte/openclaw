@@ -642,6 +642,54 @@ export async function addChannelAllowFromStoreEntry(
   });
 }
 
+export async function claimFirstChannelAllowFromStoreEntry(
+  params: AllowFromStoreEntryUpdateParams,
+): Promise<{ changed: boolean; allowFrom: string[]; normalizedEntry: string | null }> {
+  const env = params.env ?? process.env;
+  const resolvedAccountId = resolveAllowFromAccountId(params.accountId);
+  const scopedPath = resolveAllowFromPath(params.channel, env, resolvedAccountId);
+  const includeLegacyEntries = shouldIncludeLegacyAllowFromEntries(resolvedAccountId);
+  const legacyPath = includeLegacyEntries ? resolveAllowFromPath(params.channel, env) : null;
+
+  return await withFileLock(
+    scopedPath,
+    { version: 1, allowFrom: [] } satisfies AllowFromStore,
+    async () => {
+      const { current: scopedEntries, normalized } = await readAllowFromState({
+        channel: params.channel,
+        entry: params.entry,
+        filePath: scopedPath,
+      });
+      const legacyEntries =
+        legacyPath && legacyPath !== scopedPath
+          ? await readAllowFromStateForPath(params.channel, legacyPath)
+          : [];
+      const effectiveEntries = dedupePreserveOrder([...scopedEntries, ...legacyEntries]);
+      if (!normalized) {
+        return {
+          changed: false,
+          allowFrom: effectiveEntries,
+          normalizedEntry: null,
+        };
+      }
+      if (effectiveEntries.length > 0) {
+        return {
+          changed: false,
+          allowFrom: effectiveEntries,
+          normalizedEntry: normalized,
+        };
+      }
+      const next = [normalized];
+      await writeAllowFromState(scopedPath, next);
+      return {
+        changed: true,
+        allowFrom: next,
+        normalizedEntry: normalized,
+      };
+    },
+  );
+}
+
 export async function removeChannelAllowFromStoreEntry(
   params: AllowFromStoreEntryUpdateParams,
 ): Promise<{ changed: boolean; allowFrom: string[] }> {

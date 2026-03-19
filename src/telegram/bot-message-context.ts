@@ -110,11 +110,6 @@ export const buildTelegramMessageContext = async ({
   const groupAllowOverride = firstDefined(topicConfig?.allowFrom, groupConfig?.allowFrom);
   // For DMs, prefer per-DM/topic allowFrom (groupAllowOverride) over account-level allowFrom
   const dmAllowFrom = groupAllowOverride ?? allowFrom;
-  const effectiveDmAllow = normalizeDmAllowFromWithStore({
-    allowFrom: dmAllowFrom,
-    storeAllowFrom,
-    dmPolicy: effectiveDmPolicy,
-  });
   // Group sender checks are explicit and must not inherit DM pairing-store entries.
   const effectiveGroupAllow = normalizeAllowFrom(groupAllowOverride ?? groupAllowFrom);
   const hasGroupAllowOverride = typeof groupAllowOverride !== "undefined";
@@ -184,20 +179,29 @@ export const buildTelegramMessageContext = async ({
     }
   };
 
-  if (
-    !(await enforceTelegramDmAccess({
-      isGroup,
-      dmPolicy: effectiveDmPolicy,
-      msg,
-      chatId,
-      effectiveDmAllow,
-      accountId: account.accountId,
-      bot,
-      logger,
-    }))
-  ) {
+  const initialEffectiveDmAllow = normalizeDmAllowFromWithStore({
+    allowFrom: dmAllowFrom,
+    storeAllowFrom,
+    dmPolicy: effectiveDmPolicy,
+  });
+  const dmAccess = await enforceTelegramDmAccess({
+    isGroup,
+    dmPolicy: effectiveDmPolicy,
+    msg,
+    chatId,
+    effectiveDmAllow: initialEffectiveDmAllow,
+    accountId: account.accountId,
+    bot,
+    logger,
+  });
+  if (!dmAccess.allowed) {
     return null;
   }
+  const effectiveDmAllow = normalizeDmAllowFromWithStore({
+    allowFrom: dmAllowFrom,
+    storeAllowFrom: dmAccess.storeAllowFrom ?? storeAllowFrom,
+    dmPolicy: effectiveDmPolicy,
+  });
   const ensureConfiguredBindingReady = async (): Promise<boolean> => {
     if (!configuredBinding) {
       return true;

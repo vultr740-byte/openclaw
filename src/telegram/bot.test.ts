@@ -12,6 +12,7 @@ import {
   editMessageReplyMarkupSpy,
   editMessageTextSpy,
   enqueueSystemEventSpy,
+  getClaimBootstrapDmOwnerMock,
   getFileSpy,
   getLoadConfigMock,
   getReadChannelAllowFromStoreMock,
@@ -27,6 +28,7 @@ import { createTelegramBot } from "./bot.js";
 
 const loadConfig = getLoadConfigMock();
 const readChannelAllowFromStore = getReadChannelAllowFromStoreMock();
+const claimBootstrapDmOwner = getClaimBootstrapDmOwnerMock();
 
 function resolveSkillCommands(config: Parameters<typeof listNativeCommandSpecsForConfig>[0]) {
   void config;
@@ -1407,6 +1409,60 @@ describe("createTelegramBot", () => {
       "You are not authorized to use this command.",
       {},
     );
+  });
+
+  it("auto-claims the first bootstrapped Telegram DM native-command sender", async () => {
+    onSpy.mockClear();
+    sendMessageSpy.mockClear();
+    commandSpy.mockClear();
+    replySpy.mockClear();
+    replySpy.mockResolvedValue({ text: "response" });
+
+    loadConfig.mockReturnValue({
+      commands: { native: true },
+      channels: {
+        telegram: {
+          dmPolicy: "pairing",
+        },
+      },
+    });
+    readChannelAllowFromStore.mockResolvedValueOnce([]);
+    claimBootstrapDmOwner.mockResolvedValue({
+      changed: true,
+      allowFrom: ["12345"],
+      normalizedEntry: "12345",
+    });
+
+    createTelegramBot({ token: "tok" });
+    const handler = commandSpy.mock.calls.find((call) => call[0] === "status")?.[1] as
+      | ((ctx: Record<string, unknown>) => Promise<void>)
+      | undefined;
+    if (!handler) {
+      throw new Error("status command handler missing");
+    }
+
+    await handler({
+      message: {
+        chat: { id: 12345, type: "private" },
+        from: { id: 12345, username: "testuser" },
+        text: "/status",
+        date: 1736380800,
+        message_id: 42,
+      },
+      match: "",
+    });
+
+    expect(claimBootstrapDmOwner).toHaveBeenCalledWith({
+      channel: "telegram",
+      senderId: "12345",
+      accountId: "default",
+    });
+    expect(replySpy).toHaveBeenCalledTimes(1);
+    expect(
+      sendMessageSpy.mock.calls.some(
+        (call) => call[1] === "You are not authorized to use this command.",
+      ),
+    ).toBe(false);
   });
 
   it("registers message_reaction handler", () => {

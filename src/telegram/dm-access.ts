@@ -1,5 +1,6 @@
 import type { Message } from "@grammyjs/types";
 import type { Bot } from "grammy";
+import { claimBootstrapDmOwner } from "../channels/bootstrap-owner-claim.js";
 import type { DmPolicy } from "../config/types.js";
 import { logVerbose } from "../globals.js";
 import { issuePairingChallenge } from "../pairing/pairing-challenge.js";
@@ -17,6 +18,11 @@ type TelegramSenderIdentity = {
   candidateId: string;
   firstName?: string;
   lastName?: string;
+};
+
+export type TelegramDmAccessResult = {
+  allowed: boolean;
+  storeAllowFrom?: string[];
 };
 
 function resolveTelegramSenderIdentity(msg: Message, chatId: number): TelegramSenderIdentity {
@@ -40,16 +46,16 @@ export async function enforceTelegramDmAccess(params: {
   accountId: string;
   bot: Bot;
   logger: TelegramDmAccessLogger;
-}): Promise<boolean> {
+}): Promise<TelegramDmAccessResult> {
   const { isGroup, dmPolicy, msg, chatId, effectiveDmAllow, accountId, bot, logger } = params;
   if (isGroup) {
-    return true;
+    return { allowed: true };
   }
   if (dmPolicy === "disabled") {
-    return false;
+    return { allowed: false };
   }
   if (dmPolicy === "open") {
-    return true;
+    return { allowed: true };
   }
 
   const sender = resolveTelegramSenderIdentity(msg, chatId);
@@ -64,12 +70,31 @@ export async function enforceTelegramDmAccess(params: {
   const allowed =
     effectiveDmAllow.hasWildcard || (effectiveDmAllow.hasEntries && allowMatch.allowed);
   if (allowed) {
-    return true;
+    return { allowed: true };
   }
 
   if (dmPolicy === "pairing") {
+    const telegramUserId = sender.userId ?? sender.candidateId;
+    const ownerClaim = await claimBootstrapDmOwner({
+      channel: "telegram",
+      senderId: telegramUserId,
+      accountId,
+    });
+    if (ownerClaim?.allowFrom.includes(telegramUserId)) {
+      logger.info(
+        {
+          chatId: String(chatId),
+          senderUserId: sender.userId ?? undefined,
+          username: sender.username || undefined,
+          firstName: sender.firstName,
+          lastName: sender.lastName,
+          autoClaimed: ownerClaim.changed,
+        },
+        "telegram bootstrap owner claim",
+      );
+      return { allowed: true, storeAllowFrom: ownerClaim.allowFrom };
+    }
     try {
-      const telegramUserId = sender.userId ?? sender.candidateId;
       await issuePairingChallenge({
         channel: "telegram",
         senderId: telegramUserId,
@@ -113,11 +138,11 @@ export async function enforceTelegramDmAccess(params: {
     } catch (err) {
       logVerbose(`telegram pairing reply failed for chat ${chatId}: ${String(err)}`);
     }
-    return false;
+    return { allowed: false };
   }
 
   logVerbose(
     `Blocked unauthorized telegram sender ${sender.candidateId} (dmPolicy=${dmPolicy}, ${allowMatchMeta})`,
   );
-  return false;
+  return { allowed: false };
 }

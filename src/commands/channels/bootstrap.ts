@@ -1,5 +1,6 @@
 import { isDeepStrictEqual } from "node:util";
 import { resolveAgentWorkspaceDir, resolveDefaultAgentId } from "../../agents/agent-scope.js";
+import { parseBootstrapChannelIds } from "../../channels/bootstrap-owner-claim.js";
 import { getChannelPlugin } from "../../channels/plugins/index.js";
 import type { ChannelPlugin } from "../../channels/plugins/types.js";
 import {
@@ -25,20 +26,6 @@ import {
 export type ChannelsBootstrapOptions = {
   channels?: string;
 };
-
-function parseBootstrapChannelIds(raw: string | undefined): string[] {
-  if (!raw?.trim()) {
-    return [];
-  }
-  return Array.from(
-    new Set(
-      raw
-        .split(/[,\n;]+/g)
-        .map((entry) => entry.trim().toLowerCase())
-        .filter(Boolean),
-    ),
-  );
-}
 
 function formatSupportedBootstrapChannels(): string {
   return listBootstrapChannelEntries()

@@ -1,3 +1,7 @@
+import {
+  claimBootstrapDmOwner,
+  type BootstrapOwnerClaimResult,
+} from "../../channels/bootstrap-owner-claim.js";
 import { resolveCommandAuthorizedFromAuthorizers } from "../../channels/command-gating.js";
 import {
   readStoreAllowFromForDmPolicy,
@@ -51,7 +55,52 @@ export async function resolveDiscordDmCommandAccess(params: {
   allowNameMatching: boolean;
   useAccessGroups: boolean;
   readStoreAllowFrom?: () => Promise<string[]>;
+  claimBootstrapOwner?: () => Promise<BootstrapOwnerClaimResult | null>;
 }): Promise<DiscordDmCommandAccess> {
+  const buildAccess = (storeAllowFrom: string[]): DiscordDmCommandAccess => {
+    const access = resolveDmGroupAccessWithLists({
+      isGroup: false,
+      dmPolicy: params.dmPolicy,
+      allowFrom: params.configuredAllowFrom,
+      groupAllowFrom: [],
+      storeAllowFrom,
+      isSenderAllowed: (allowEntries) =>
+        resolveSenderAllowMatch({
+          allowEntries,
+          sender: params.sender,
+          allowNameMatching: params.allowNameMatching,
+        }).allowed,
+    });
+
+    const allowMatch = resolveSenderAllowMatch({
+      allowEntries: access.effectiveAllowFrom,
+      sender: params.sender,
+      allowNameMatching: params.allowNameMatching,
+    });
+
+    const commandAuthorized = resolveCommandAuthorizedFromAuthorizers({
+      useAccessGroups: params.useAccessGroups,
+      authorizers: [
+        {
+          configured: access.effectiveAllowFrom.length > 0,
+          allowed: allowMatch.allowed,
+        },
+      ],
+      modeWhenAccessGroupsOff: "configured",
+    });
+
+    return {
+      decision: access.decision,
+      reason: access.reason,
+      commandAuthorized: resolveDmPolicyCommandAuthorization({
+        dmPolicy: params.dmPolicy,
+        decision: access.decision,
+        commandAuthorized,
+      }),
+      allowMatch,
+    };
+  };
+
   const storeAllowFrom = params.readStoreAllowFrom
     ? await params.readStoreAllowFrom().catch(() => [])
     : await readStoreAllowFromForDmPolicy({
@@ -60,45 +109,20 @@ export async function resolveDiscordDmCommandAccess(params: {
         dmPolicy: params.dmPolicy,
       });
 
-  const access = resolveDmGroupAccessWithLists({
-    isGroup: false,
-    dmPolicy: params.dmPolicy,
-    allowFrom: params.configuredAllowFrom,
-    groupAllowFrom: [],
-    storeAllowFrom,
-    isSenderAllowed: (allowEntries) =>
-      resolveSenderAllowMatch({
-        allowEntries,
-        sender: params.sender,
-        allowNameMatching: params.allowNameMatching,
-      }).allowed,
-  });
+  const initialAccess = buildAccess(storeAllowFrom);
+  if (initialAccess.decision === "allow" || params.dmPolicy !== "pairing") {
+    return initialAccess;
+  }
 
-  const allowMatch = resolveSenderAllowMatch({
-    allowEntries: access.effectiveAllowFrom,
-    sender: params.sender,
-    allowNameMatching: params.allowNameMatching,
-  });
-
-  const commandAuthorized = resolveCommandAuthorizedFromAuthorizers({
-    useAccessGroups: params.useAccessGroups,
-    authorizers: [
-      {
-        configured: access.effectiveAllowFrom.length > 0,
-        allowed: allowMatch.allowed,
-      },
-    ],
-    modeWhenAccessGroupsOff: "configured",
-  });
-
-  return {
-    decision: access.decision,
-    reason: access.reason,
-    commandAuthorized: resolveDmPolicyCommandAuthorization({
-      dmPolicy: params.dmPolicy,
-      decision: access.decision,
-      commandAuthorized,
-    }),
-    allowMatch,
-  };
+  const ownerClaim = params.claimBootstrapOwner
+    ? await params.claimBootstrapOwner()
+    : await claimBootstrapDmOwner({
+        channel: "discord",
+        senderId: params.sender.id,
+        accountId: params.accountId,
+      });
+  if (!ownerClaim) {
+    return initialAccess;
+  }
+  return buildAccess(ownerClaim.allowFrom);
 }

@@ -1524,8 +1524,9 @@ export const registerTelegramHandlers = ({
         return;
       }
 
+      let nextStoreAllowFrom = storeAllowFrom;
       if (!event.isGroup && (hasInboundMedia(event.msg) || hasReplyTargetMedia(event.msg))) {
-        const dmAuthorized = await enforceTelegramDmAccess({
+        const dmAccess = await enforceTelegramDmAccess({
           isGroup: event.isGroup,
           dmPolicy,
           msg: event.msg,
@@ -1535,9 +1536,10 @@ export const registerTelegramHandlers = ({
           bot,
           logger,
         });
-        if (!dmAuthorized) {
+        if (!dmAccess.allowed) {
           return;
         }
+        nextStoreAllowFrom = dmAccess.storeAllowFrom ?? storeAllowFrom;
       }
 
       await processInboundMessage({
@@ -1546,7 +1548,7 @@ export const registerTelegramHandlers = ({
         chatId: event.chatId,
         resolvedThreadId,
         dmThreadId,
-        storeAllowFrom,
+        storeAllowFrom: nextStoreAllowFrom,
         sendOversizeWarning: event.sendOversizeWarning,
         oversizeLogMessage: event.oversizeLogMessage,
       });

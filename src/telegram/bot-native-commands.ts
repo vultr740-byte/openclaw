@@ -15,6 +15,7 @@ import { finalizeInboundContext } from "../auto-reply/reply/inbound-context.js";
 import { dispatchReplyWithBufferedBlockDispatcher } from "../auto-reply/reply/provider-dispatcher.js";
 import { listSkillCommandsForAgents } from "../auto-reply/skill-commands.js";
 import { normalizeElevatedLevel } from "../auto-reply/thinking.js";
+import { claimBootstrapDmOwner } from "../channels/bootstrap-owner-claim.js";
 import { resolveCommandAuthorizedFromAuthorizers } from "../channels/command-gating.js";
 import { resolveNativeCommandSessionTargets } from "../channels/native-command-session-targets.js";
 import { createReplyPrefixOptions } from "../channels/reply-prefix.js";
@@ -303,16 +304,37 @@ async function resolveTelegramCommandAuth(params: {
     }
   }
 
-  const dmAllow = normalizeDmAllowFromWithStore({
+  let effectiveStoreAllowFrom = isGroup ? [] : storeAllowFrom;
+  let dmAllow = normalizeDmAllowFromWithStore({
     allowFrom: dmAllowFrom,
-    storeAllowFrom: isGroup ? [] : storeAllowFrom,
+    storeAllowFrom: effectiveStoreAllowFrom,
     dmPolicy: effectiveDmPolicy,
   });
-  const senderAllowed = isSenderAllowed({
+  let senderAllowed = isSenderAllowed({
     allow: dmAllow,
     senderId,
     senderUsername,
   });
+  if (!isGroup && effectiveDmPolicy === "pairing" && !dmAllow.hasEntries) {
+    const ownerClaim = await claimBootstrapDmOwner({
+      channel: "telegram",
+      senderId,
+      accountId,
+    });
+    if (ownerClaim?.allowFrom) {
+      effectiveStoreAllowFrom = ownerClaim.allowFrom;
+      dmAllow = normalizeDmAllowFromWithStore({
+        allowFrom: dmAllowFrom,
+        storeAllowFrom: effectiveStoreAllowFrom,
+        dmPolicy: effectiveDmPolicy,
+      });
+      senderAllowed = isSenderAllowed({
+        allow: dmAllow,
+        senderId,
+        senderUsername,
+      });
+    }
+  }
   const groupSenderAllowed = isGroup
     ? isSenderAllowed({ allow: effectiveGroupAllow, senderId, senderUsername })
     : false;

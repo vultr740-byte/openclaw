@@ -9,6 +9,7 @@ import { DEFAULT_ACCOUNT_ID } from "../routing/session-key.js";
 import { withEnvAsync } from "../test-utils/env.js";
 import {
   addChannelAllowFromStoreEntry,
+  claimFirstChannelAllowFromStoreEntry,
   clearPairingAllowFromReadCacheForTest,
   approveChannelPairingCode,
   listChannelPairingRequests,
@@ -286,6 +287,48 @@ describe("pairing store", () => {
       });
 
       await expectAccountScopedEntryIsolated("12345");
+    });
+  });
+
+  it("claims the first allowFrom owner atomically when the store is empty", async () => {
+    await withTempStateDir(async () => {
+      const claimed = await claimFirstChannelAllowFromStoreEntry({
+        channel: "telegram",
+        accountId: "yy",
+        entry: "12345",
+      });
+
+      expect(claimed).toEqual({
+        changed: true,
+        allowFrom: ["12345"],
+        normalizedEntry: "12345",
+      });
+      await expectAccountScopedEntryIsolated("12345");
+    });
+  });
+
+  it("does not claim a new first owner when legacy default-account allowFrom already exists", async () => {
+    await withTempStateDir(async (stateDir) => {
+      await writeAllowFromFixture({
+        stateDir,
+        channel: "telegram",
+        allowFrom: ["1001"],
+      });
+
+      const claimed = await claimFirstChannelAllowFromStoreEntry({
+        channel: "telegram",
+        accountId: DEFAULT_ACCOUNT_ID,
+        entry: "2002",
+      });
+
+      expect(claimed).toEqual({
+        changed: false,
+        allowFrom: ["1001"],
+        normalizedEntry: "2002",
+      });
+      expect(await readChannelAllowFromStore("telegram", process.env, DEFAULT_ACCOUNT_ID)).toEqual([
+        "1001",
+      ]);
     });
   });
 

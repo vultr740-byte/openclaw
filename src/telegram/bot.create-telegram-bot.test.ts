@@ -9,6 +9,7 @@ import {
   answerCallbackQuerySpy,
   botCtorSpy,
   commandSpy,
+  getClaimBootstrapDmOwnerMock,
   getLoadConfigMock,
   getLoadWebMediaMock,
   getOnHandler,
@@ -36,6 +37,7 @@ const loadConfig = getLoadConfigMock();
 const loadWebMedia = getLoadWebMediaMock();
 const readChannelAllowFromStore = getReadChannelAllowFromStoreMock();
 const upsertChannelPairingRequest = getUpsertChannelPairingRequestMock();
+const claimBootstrapDmOwner = getClaimBootstrapDmOwnerMock();
 
 const ORIGINAL_TZ = process.env.TZ;
 const TELEGRAM_TEST_TIMINGS = {
@@ -239,6 +241,42 @@ describe("createTelegramBot", () => {
         expect(pairingText, testCase.name).not.toContain("<code>");
       }
     }
+  });
+  it("auto-claims the first bootstrapped Telegram DM sender and processes the message", async () => {
+    onSpy.mockClear();
+    sendMessageSpy.mockClear();
+    replySpy.mockClear();
+    loadConfig.mockReturnValue({
+      channels: { telegram: { dmPolicy: "pairing" } },
+    });
+    readChannelAllowFromStore.mockResolvedValue([]);
+    claimBootstrapDmOwner.mockResolvedValue({
+      changed: true,
+      allowFrom: ["999"],
+      normalizedEntry: "999",
+    });
+
+    createTelegramBot({ token: "tok" });
+    const handler = getOnHandler("message") as (ctx: Record<string, unknown>) => Promise<void>;
+
+    await handler({
+      message: {
+        chat: { id: 1234, type: "private" },
+        text: "hello",
+        date: 1736380800,
+        from: { id: 999, username: "random" },
+      },
+      me: { username: "openclaw_bot" },
+      getFile: async () => ({ download: async () => new Uint8Array() }),
+    });
+
+    expect(claimBootstrapDmOwner).toHaveBeenCalledWith({
+      channel: "telegram",
+      senderId: "999",
+      accountId: "default",
+    });
+    expect(sendMessageSpy).not.toHaveBeenCalled();
+    expect(replySpy).toHaveBeenCalledTimes(1);
   });
   it("blocks unauthorized DM media before download and sends pairing reply", async () => {
     loadConfig.mockReturnValue({

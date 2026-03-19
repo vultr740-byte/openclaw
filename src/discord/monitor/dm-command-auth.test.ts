@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { resolveDiscordDmCommandAccess } from "./dm-command-auth.js";
 
 describe("resolveDiscordDmCommandAccess", () => {
@@ -78,6 +78,29 @@ describe("resolveDiscordDmCommandAccess", () => {
 
     expect(result.decision).toBe("allow");
     expect(result.commandAuthorized).toBe(true);
+  });
+
+  it("auto-claims the first bootstrapped DM owner before falling back to pairing", async () => {
+    const claimBootstrapOwner = vi.fn(async () => ({
+      changed: true,
+      allowFrom: ["123"],
+      normalizedEntry: "123",
+    }));
+
+    const result = await resolveDiscordDmCommandAccess({
+      accountId: "default",
+      dmPolicy: "pairing",
+      configuredAllowFrom: [],
+      sender,
+      allowNameMatching: false,
+      useAccessGroups: true,
+      readStoreAllowFrom: async () => [],
+      claimBootstrapOwner,
+    });
+
+    expect(result.decision).toBe("allow");
+    expect(result.commandAuthorized).toBe(true);
+    expect(claimBootstrapOwner).toHaveBeenCalledTimes(1);
   });
 
   it("keeps open DM command auth true when access groups are disabled", async () => {
