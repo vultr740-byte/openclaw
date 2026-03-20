@@ -41,6 +41,14 @@ bin/clawdbot-mac
 bin/docs-list
 !skills/sherpa-onnx-tts/bin/
 !skills/sherpa-onnx-tts/bin/sherpa-onnx-tts
+!skills/gstack/bin/
+!skills/gstack/bin/**
+!skills/gstack/browse/bin/
+!skills/gstack/browse/bin/**
+!skills/gstack-careful/bin/
+!skills/gstack-careful/bin/**
+!skills/gstack-freeze/bin/
+!skills/gstack-freeze/bin/**
 apps/macos/.build-local/
 apps/macos/.swiftpm/
 apps/shared/MoltbotKit/.swiftpm/
