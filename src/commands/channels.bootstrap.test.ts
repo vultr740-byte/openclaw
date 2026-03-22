@@ -79,6 +79,22 @@ vi.mock("../plugins/loader.js", async (importOriginal) => {
     },
   };
 
+  const weixinPlugin = {
+    id: "openclaw-weixin",
+    meta: {
+      id: "openclaw-weixin",
+      label: "Weixin",
+      selectionLabel: "Weixin",
+      docsPath: "/channels/openclaw-weixin",
+      blurb: "test stub.",
+    },
+    capabilities: { chatTypes: ["direct"] as const },
+    config: {
+      listAccountIds: () => [],
+      resolveAccount: () => ({}),
+    },
+  };
+
   pluginLoaderState.loadOpenClawPlugins.mockImplementation((options?: { config?: unknown }) => {
     const config = options?.config as
       | {
@@ -88,6 +104,7 @@ vi.mock("../plugins/loader.js", async (importOriginal) => {
         }
       | undefined;
     const qqbotEnabled = config?.plugins?.entries?.["openclaw-qqbot"]?.enabled === true;
+    const weixinEnabled = config?.plugins?.entries?.["openclaw-weixin"]?.enabled === true;
     const registry = {
       plugins: [],
       tools: [],
@@ -97,6 +114,9 @@ vi.mock("../plugins/loader.js", async (importOriginal) => {
         { pluginId: "telegram", plugin: telegramPlugin, source: "test" },
         ...(pluginLoaderState.installed && qqbotEnabled
           ? [{ pluginId: "openclaw-qqbot", plugin: qqbotPlugin, source: "test" }]
+          : []),
+        ...(pluginLoaderState.installed && weixinEnabled
+          ? [{ pluginId: "openclaw-weixin", plugin: weixinPlugin, source: "test" }]
           : []),
       ],
       providers: [],
@@ -521,5 +541,48 @@ describe("channelsBootstrapCommand", () => {
     expect(installMocks.installPluginFromNpmSpec).not.toHaveBeenCalled();
     expect(configMocks.writeConfigFile).not.toHaveBeenCalled();
     expect(runtime.log).toHaveBeenCalledWith("Bootstrap config already up to date.");
+  });
+
+  it("installs weixin and enables the channel without extra env", async () => {
+    configMocks.readConfigFileSnapshotForWrite.mockResolvedValue(makeWriteSnapshot());
+    installMocks.installPluginFromNpmSpec.mockImplementation(async () => {
+      pluginLoaderState.installed = true;
+      return {
+        ok: true,
+        pluginId: "openclaw-weixin",
+        targetDir: "/tmp/extensions/openclaw-weixin",
+        version: "1.0.2",
+        extensions: ["dist/index.js"],
+      };
+    });
+
+    await channelsBootstrapCommand({ channels: "weixin" }, runtime);
+
+    expect(installMocks.installPluginFromNpmSpec).toHaveBeenCalledWith({
+      spec: "@tencent-weixin/openclaw-weixin@latest",
+      expectedPluginId: "openclaw-weixin",
+      logger: expect.any(Object),
+    });
+
+    const writtenConfig = configMocks.writeConfigFile.mock.calls[0]?.[0] as {
+      channels?: {
+        "openclaw-weixin"?: {
+          enabled?: boolean;
+        };
+      };
+      plugins?: {
+        entries?: Record<string, { enabled?: boolean }>;
+        installs?: Record<string, { spec?: string; version?: string }>;
+      };
+    };
+
+    expect(writtenConfig.channels?.["openclaw-weixin"]).toEqual({
+      enabled: true,
+    });
+    expect(writtenConfig.plugins?.entries?.["openclaw-weixin"]?.enabled).toBe(true);
+    expect(writtenConfig.plugins?.installs?.["openclaw-weixin"]).toMatchObject({
+      spec: "@tencent-weixin/openclaw-weixin@latest",
+      version: "1.0.2",
+    });
   });
 });

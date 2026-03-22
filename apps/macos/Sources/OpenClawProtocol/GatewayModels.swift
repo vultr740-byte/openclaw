@@ -1543,20 +1543,23 @@ public struct ConfigApplyParams: Codable, Sendable {
 }
 
 public struct ConfigPatchParams: Codable, Sendable {
-    public let raw: String
+    public let raw: String?
+    public let ops: [[String: AnyCodable]]?
     public let basehash: String?
     public let sessionkey: String?
     public let note: String?
     public let restartdelayms: Int?
 
     public init(
-        raw: String,
+        raw: String?,
+        ops: [[String: AnyCodable]]?,
         basehash: String?,
         sessionkey: String?,
         note: String?,
         restartdelayms: Int?)
     {
         self.raw = raw
+        self.ops = ops
         self.basehash = basehash
         self.sessionkey = sessionkey
         self.note = note
@@ -1565,6 +1568,7 @@ public struct ConfigPatchParams: Codable, Sendable {
 
     private enum CodingKeys: String, CodingKey {
         case raw
+        case ops
         case basehash = "baseHash"
         case sessionkey = "sessionKey"
         case note
@@ -1953,6 +1957,150 @@ public struct ChannelsLogoutParams: Codable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case channel
         case accountid = "accountId"
+    }
+}
+
+public struct ChannelsLoginStartParams: Codable, Sendable {
+    public let channel: String
+    public let loginkey: String?
+    public let accountid: String?
+    public let force: Bool?
+    public let timeoutms: Int?
+    public let verbose: Bool?
+
+    public init(
+        channel: String,
+        loginkey: String?,
+        accountid: String?,
+        force: Bool?,
+        timeoutms: Int?,
+        verbose: Bool?)
+    {
+        self.channel = channel
+        self.loginkey = loginkey
+        self.accountid = accountid
+        self.force = force
+        self.timeoutms = timeoutms
+        self.verbose = verbose
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case channel
+        case loginkey = "loginKey"
+        case accountid = "accountId"
+        case force
+        case timeoutms = "timeoutMs"
+        case verbose
+    }
+}
+
+public struct ChannelsLoginStatusParams: Codable, Sendable {
+    public let channel: String
+    public let loginkey: String?
+    public let accountid: String?
+
+    public init(
+        channel: String,
+        loginkey: String?,
+        accountid: String?)
+    {
+        self.channel = channel
+        self.loginkey = loginkey
+        self.accountid = accountid
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case channel
+        case loginkey = "loginKey"
+        case accountid = "accountId"
+    }
+}
+
+public struct ChannelsLoginRefreshParams: Codable, Sendable {
+    public let channel: String
+    public let loginkey: String?
+    public let accountid: String?
+    public let timeoutms: Int?
+    public let verbose: Bool?
+
+    public init(
+        channel: String,
+        loginkey: String?,
+        accountid: String?,
+        timeoutms: Int?,
+        verbose: Bool?)
+    {
+        self.channel = channel
+        self.loginkey = loginkey
+        self.accountid = accountid
+        self.timeoutms = timeoutms
+        self.verbose = verbose
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case channel
+        case loginkey = "loginKey"
+        case accountid = "accountId"
+        case timeoutms = "timeoutMs"
+        case verbose
+    }
+}
+
+public struct ChannelsLoginResult: Codable, Sendable {
+    public let channel: String
+    public let loginkey: String
+    public let status: AnyCodable
+    public let connected: Bool
+    public let message: String
+    public let sessionkey: String?
+    public let accountid: String?
+    public let qr: [String: AnyCodable]?
+    public let ttlms: Int?
+    public let startedat: Int?
+    public let updatedat: Int?
+    public let expiresat: Int?
+
+    public init(
+        channel: String,
+        loginkey: String,
+        status: AnyCodable,
+        connected: Bool,
+        message: String,
+        sessionkey: String?,
+        accountid: String?,
+        qr: [String: AnyCodable]?,
+        ttlms: Int?,
+        startedat: Int?,
+        updatedat: Int?,
+        expiresat: Int?)
+    {
+        self.channel = channel
+        self.loginkey = loginkey
+        self.status = status
+        self.connected = connected
+        self.message = message
+        self.sessionkey = sessionkey
+        self.accountid = accountid
+        self.qr = qr
+        self.ttlms = ttlms
+        self.startedat = startedat
+        self.updatedat = updatedat
+        self.expiresat = expiresat
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case channel
+        case loginkey = "loginKey"
+        case status
+        case connected
+        case message
+        case sessionkey = "sessionKey"
+        case accountid = "accountId"
+        case qr
+        case ttlms = "ttlMs"
+        case startedat = "startedAt"
+        case updatedat = "updatedAt"
+        case expiresat = "expiresAt"
     }
 }
 
@@ -2613,6 +2761,7 @@ public struct CronJob: Codable, Sendable {
     public let wakemode: AnyCodable
     public let payload: AnyCodable
     public let delivery: AnyCodable?
+    public let followup: [String: AnyCodable]?
     public let failurealert: AnyCodable?
     public let state: [String: AnyCodable]
 
@@ -2631,6 +2780,7 @@ public struct CronJob: Codable, Sendable {
         wakemode: AnyCodable,
         payload: AnyCodable,
         delivery: AnyCodable?,
+        followup: [String: AnyCodable]?,
         failurealert: AnyCodable?,
         state: [String: AnyCodable])
     {
@@ -2648,6 +2798,7 @@ public struct CronJob: Codable, Sendable {
         self.wakemode = wakemode
         self.payload = payload
         self.delivery = delivery
+        self.followup = followup
         self.failurealert = failurealert
         self.state = state
     }
@@ -2667,6 +2818,7 @@ public struct CronJob: Codable, Sendable {
         case wakemode = "wakeMode"
         case payload
         case delivery
+        case followup
         case failurealert = "failureAlert"
         case state
     }
@@ -2724,6 +2876,7 @@ public struct CronAddParams: Codable, Sendable {
     public let wakemode: AnyCodable
     public let payload: AnyCodable
     public let delivery: AnyCodable?
+    public let followup: [String: AnyCodable]?
     public let failurealert: AnyCodable?
 
     public init(
@@ -2738,6 +2891,7 @@ public struct CronAddParams: Codable, Sendable {
         wakemode: AnyCodable,
         payload: AnyCodable,
         delivery: AnyCodable?,
+        followup: [String: AnyCodable]?,
         failurealert: AnyCodable?)
     {
         self.name = name
@@ -2751,6 +2905,7 @@ public struct CronAddParams: Codable, Sendable {
         self.wakemode = wakemode
         self.payload = payload
         self.delivery = delivery
+        self.followup = followup
         self.failurealert = failurealert
     }
 
@@ -2766,6 +2921,7 @@ public struct CronAddParams: Codable, Sendable {
         case wakemode = "wakeMode"
         case payload
         case delivery
+        case followup
         case failurealert = "failureAlert"
     }
 }

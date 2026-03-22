@@ -17,6 +17,7 @@ export type {
   ChannelGatewayContext,
   ChannelGroupAdapter,
   ChannelHeartbeatAdapter,
+  ChannelLoginQrPayload,
   ChannelLoginWithQrStartResult,
   ChannelLoginWithQrWaitResult,
   ChannelLogoutContext,

@@ -173,6 +173,72 @@ export const ChannelsLogoutParamsSchema = Type.Object(
   { additionalProperties: false },
 );
 
+const ChannelLoginQrSchema = Type.Object(
+  {
+    kind: Type.Union([Type.Literal("data_url"), Type.Literal("text")]),
+    value: NonEmptyString,
+  },
+  { additionalProperties: false },
+);
+
+const ChannelLoginStatusSchema = Type.Union([
+  Type.Literal("missing"),
+  Type.Literal("qr_ready"),
+  Type.Literal("connected"),
+  Type.Literal("expired"),
+  Type.Literal("error"),
+]);
+
+export const ChannelsLoginStartParamsSchema = Type.Object(
+  {
+    channel: NonEmptyString,
+    loginKey: Type.Optional(NonEmptyString),
+    accountId: Type.Optional(Type.String()),
+    force: Type.Optional(Type.Boolean()),
+    timeoutMs: Type.Optional(Type.Integer({ minimum: 0 })),
+    verbose: Type.Optional(Type.Boolean()),
+  },
+  { additionalProperties: false },
+);
+
+export const ChannelsLoginStatusParamsSchema = Type.Object(
+  {
+    channel: NonEmptyString,
+    loginKey: Type.Optional(NonEmptyString),
+    accountId: Type.Optional(Type.String()),
+  },
+  { additionalProperties: false },
+);
+
+export const ChannelsLoginRefreshParamsSchema = Type.Object(
+  {
+    channel: NonEmptyString,
+    loginKey: Type.Optional(NonEmptyString),
+    accountId: Type.Optional(Type.String()),
+    timeoutMs: Type.Optional(Type.Integer({ minimum: 0 })),
+    verbose: Type.Optional(Type.Boolean()),
+  },
+  { additionalProperties: false },
+);
+
+export const ChannelsLoginResultSchema = Type.Object(
+  {
+    channel: NonEmptyString,
+    loginKey: NonEmptyString,
+    status: ChannelLoginStatusSchema,
+    connected: Type.Boolean(),
+    message: Type.String(),
+    sessionKey: Type.Optional(Type.String()),
+    accountId: Type.Optional(Type.String()),
+    qr: Type.Optional(ChannelLoginQrSchema),
+    ttlMs: Type.Optional(Type.Integer({ minimum: 1 })),
+    startedAt: Type.Optional(Type.Integer({ minimum: 0 })),
+    updatedAt: Type.Optional(Type.Integer({ minimum: 0 })),
+    expiresAt: Type.Optional(Type.Integer({ minimum: 0 })),
+  },
+  { additionalProperties: false },
+);
+
 export const WebLoginStartParamsSchema = Type.Object(
   {
     force: Type.Optional(Type.Boolean()),

@@ -1,6 +1,8 @@
 import { resolveBootstrapOwnerClaimModeForChannel } from "../../channels/bootstrap-owner-claim.js";
 import type { ChannelPlugin } from "../../channels/plugins/types.js";
 import type { OpenClawConfig } from "../../config/config.js";
+import type { ExtensionChannelConfig } from "../../config/types.channels.js";
+import type { DiscordConfig } from "../../config/types.discord.js";
 import { isRecord } from "../../utils.js";
 
 type BootstrapChannelConfigContext = {
@@ -24,6 +26,14 @@ function envRef(name: string): string {
   return `\${${name}}`;
 }
 
+function resolveChannelSection(
+  cfg: OpenClawConfig,
+  channelId: "discord",
+): Partial<DiscordConfig> | undefined;
+function resolveChannelSection(
+  cfg: OpenClawConfig,
+  channelId: string,
+): ExtensionChannelConfig | undefined;
 function resolveChannelSection(
   cfg: OpenClawConfig,
   channelId: string,
@@ -57,21 +67,22 @@ const bootstrapChannelEntries: BootstrapChannelEntry[] = [
         existingDm !== undefined;
       const hasExplicitGuildConfig =
         typeof existing?.groupPolicy === "string" || existing?.guilds !== undefined;
-      const defaultDmConfig =
+      const defaultDmConfig: Pick<DiscordConfig, "dmPolicy" | "allowFrom"> =
         resolveBootstrapOwnerClaimModeForChannel("discord", env) === "first-dm"
           ? { dmPolicy: "pairing", allowFrom: [] }
           : { dmPolicy: "open", allowFrom: ["*"] };
+      const discordConfig: DiscordConfig = {
+        ...existing,
+        enabled: true,
+        token: envRef("DISCORD_BOT_TOKEN"),
+        ...(hasExplicitDmConfig ? {} : defaultDmConfig),
+        ...(hasExplicitGuildConfig ? {} : { groupPolicy: "disabled" }),
+      };
       return {
         ...cfg,
         channels: {
           ...cfg.channels,
-          discord: {
-            ...existing,
-            enabled: true,
-            token: envRef("DISCORD_BOT_TOKEN"),
-            ...(hasExplicitDmConfig ? {} : defaultDmConfig),
-            ...(hasExplicitGuildConfig ? {} : { groupPolicy: "disabled" }),
-          },
+          discord: discordConfig,
         },
       };
     },
@@ -97,17 +108,39 @@ const bootstrapChannelEntries: BootstrapChannelEntry[] = [
     applyConfig: ({ cfg }) => {
       const existing = resolveChannelSection(cfg, "qqbot");
       const allowFrom = Array.isArray(existing?.allowFrom) ? existing.allowFrom : ["*"];
+      const qqbotConfig: ExtensionChannelConfig = {
+        ...existing,
+        enabled: true,
+        allowFrom,
+        appId: envRef("QQ_APP_ID"),
+        clientSecret: envRef("QQ_APP_SECRET"),
+      };
       return {
         ...cfg,
         channels: {
           ...cfg.channels,
-          qqbot: {
-            ...existing,
-            enabled: true,
-            allowFrom,
-            appId: envRef("QQ_APP_ID"),
-            clientSecret: envRef("QQ_APP_SECRET"),
-          },
+          qqbot: qqbotConfig,
+        },
+      };
+    },
+  },
+  {
+    publicId: "weixin",
+    channelId: "openclaw-weixin",
+    pluginId: "openclaw-weixin",
+    npmSpec: "@tencent-weixin/openclaw-weixin@latest",
+    requiredEnv: [],
+    applyConfig: ({ cfg }) => {
+      const existing = resolveChannelSection(cfg, "openclaw-weixin");
+      const weixinConfig: ExtensionChannelConfig = {
+        ...existing,
+        enabled: true,
+      };
+      return {
+        ...cfg,
+        channels: {
+          ...cfg.channels,
+          "openclaw-weixin": weixinConfig,
         },
       };
     },

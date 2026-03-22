@@ -11,14 +11,16 @@ describe("bootstrap owner claim helpers", () => {
   it("normalizes bootstrap channel aliases", () => {
     expect(normalizeBootstrapChannelId("tg")).toBe("telegram");
     expect(normalizeBootstrapChannelId("qq")).toBe("qqbot");
+    expect(normalizeBootstrapChannelId("weixin")).toBe("weixin");
     expect(normalizeBootstrapChannelId("discord")).toBe("discord");
   });
 
   it("parses and deduplicates bootstrap channel lists", () => {
-    expect(parseBootstrapChannelIds("discord, tg;qqbot\ndiscord")).toEqual([
+    expect(parseBootstrapChannelIds("discord, tg;qqbot\nweixin;discord")).toEqual([
       "discord",
       "telegram",
       "qqbot",
+      "weixin",
     ]);
   });
 

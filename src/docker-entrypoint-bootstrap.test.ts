@@ -287,4 +287,26 @@ describe("docker-entrypoint channel bootstrap", () => {
       },
     ]);
   });
+
+  it("calls the internal bootstrap command for weixin bootstrap", () => {
+    const { result, invocations } = runEntrypointBootstrapFunctions({
+      env: {
+        OPENCLAW_BOOTSTRAP_CHANNEL: "weixin",
+      },
+    });
+
+    expect(result.status, result.stderr || result.stdout).toBe(0);
+    expect(invocations).toEqual([
+      {
+        argv: ["channels", "bootstrap", "--channels", "weixin"],
+        env: {
+          DISCORD_BOT_TOKEN: null,
+          QQ_APP_ID: null,
+          QQ_APP_SECRET: null,
+          QQBOT_APP_ID: null,
+          QQBOT_CLIENT_SECRET: null,
+        },
+      },
+    ]);
+  });
 });

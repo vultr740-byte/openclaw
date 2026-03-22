@@ -19,6 +19,8 @@ export function normalizeBootstrapChannelId(raw: string): string {
     case "qq":
     case "qqbot":
       return "qqbot";
+    case "weixin":
+      return "weixin";
     default:
       return normalized;
   }

@@ -44,6 +44,14 @@ import {
   AgentWaitParamsSchema,
   type ChannelsLogoutParams,
   ChannelsLogoutParamsSchema,
+  type ChannelsLoginRefreshParams,
+  ChannelsLoginRefreshParamsSchema,
+  type ChannelsLoginResult,
+  ChannelsLoginResultSchema,
+  type ChannelsLoginStartParams,
+  ChannelsLoginStartParamsSchema,
+  type ChannelsLoginStatusParams,
+  ChannelsLoginStatusParamsSchema,
   type TalkConfigParams,
   TalkConfigParamsSchema,
   type TalkConfigResult,
@@ -360,6 +368,17 @@ export const validateChannelsStatusParams = ajv.compile<ChannelsStatusParams>(
 export const validateChannelsLogoutParams = ajv.compile<ChannelsLogoutParams>(
   ChannelsLogoutParamsSchema,
 );
+export const validateChannelsLoginStartParams = ajv.compile<ChannelsLoginStartParams>(
+  ChannelsLoginStartParamsSchema,
+);
+export const validateChannelsLoginStatusParams = ajv.compile<ChannelsLoginStatusParams>(
+  ChannelsLoginStatusParamsSchema,
+);
+export const validateChannelsLoginRefreshParams = ajv.compile<ChannelsLoginRefreshParams>(
+  ChannelsLoginRefreshParamsSchema,
+);
+export const validateChannelsLoginResult =
+  ajv.compile<ChannelsLoginResult>(ChannelsLoginResultSchema);
 export const validateModelsListParams = ajv.compile<ModelsListParams>(ModelsListParamsSchema);
 export const validateSkillsStatusParams = ajv.compile<SkillsStatusParams>(SkillsStatusParamsSchema);
 export const validateToolsCatalogParams = ajv.compile<ToolsCatalogParams>(ToolsCatalogParamsSchema);
@@ -518,6 +537,10 @@ export {
   ChannelsStatusParamsSchema,
   ChannelsStatusResultSchema,
   ChannelsLogoutParamsSchema,
+  ChannelsLoginStartParamsSchema,
+  ChannelsLoginStatusParamsSchema,
+  ChannelsLoginRefreshParamsSchema,
+  ChannelsLoginResultSchema,
   WebLoginStartParamsSchema,
   WebLoginWaitParamsSchema,
   AgentSummarySchema,
@@ -608,6 +631,10 @@ export type {
   ChannelsStatusParams,
   ChannelsStatusResult,
   ChannelsLogoutParams,
+  ChannelsLoginStartParams,
+  ChannelsLoginStatusParams,
+  ChannelsLoginRefreshParams,
+  ChannelsLoginResult,
   WebLoginStartParams,
   WebLoginWaitParams,
   AgentSummary,

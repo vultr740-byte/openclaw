@@ -14,9 +14,17 @@ import { getChannelActivity } from "../../infra/channel-activity.js";
 import { DEFAULT_ACCOUNT_ID } from "../../routing/session-key.js";
 import { defaultRuntime } from "../../runtime.js";
 import {
+  getChannelLoginSessionStatus,
+  refreshChannelLoginSession,
+  startChannelLoginSession,
+} from "../channel-login-sessions.js";
+import {
   ErrorCodes,
   errorShape,
   formatValidationErrors,
+  validateChannelsLoginRefreshParams,
+  validateChannelsLoginStartParams,
+  validateChannelsLoginStatusParams,
   validateChannelsLogoutParams,
   validateChannelsStatusParams,
 } from "../protocol/index.js";
@@ -283,6 +291,110 @@ export const channelsHandlers: GatewayRequestHandlers = {
         cfg: snapshot.config ?? {},
         context,
         plugin,
+      });
+      respond(true, payload, undefined);
+    } catch (err) {
+      respond(false, undefined, errorShape(ErrorCodes.UNAVAILABLE, formatForLog(err)));
+    }
+  },
+  "channels.login.start": async ({ params, respond, context }) => {
+    if (!validateChannelsLoginStartParams(params)) {
+      respond(
+        false,
+        undefined,
+        errorShape(
+          ErrorCodes.INVALID_REQUEST,
+          `invalid channels.login.start params: ${formatValidationErrors(validateChannelsLoginStartParams.errors)}`,
+        ),
+      );
+      return;
+    }
+
+    try {
+      const payload = await startChannelLoginSession({
+        channel: (params as { channel: string }).channel,
+        loginKey:
+          typeof (params as { loginKey?: unknown }).loginKey === "string"
+            ? (params as { loginKey?: string }).loginKey
+            : undefined,
+        accountId:
+          typeof (params as { accountId?: unknown }).accountId === "string"
+            ? (params as { accountId?: string }).accountId
+            : undefined,
+        force: Boolean((params as { force?: boolean }).force),
+        timeoutMs:
+          typeof (params as { timeoutMs?: unknown }).timeoutMs === "number"
+            ? (params as { timeoutMs?: number }).timeoutMs
+            : undefined,
+        verbose: Boolean((params as { verbose?: boolean }).verbose),
+        context,
+      });
+      respond(true, payload, undefined);
+    } catch (err) {
+      respond(false, undefined, errorShape(ErrorCodes.UNAVAILABLE, formatForLog(err)));
+    }
+  },
+  "channels.login.status": async ({ params, respond, context }) => {
+    if (!validateChannelsLoginStatusParams(params)) {
+      respond(
+        false,
+        undefined,
+        errorShape(
+          ErrorCodes.INVALID_REQUEST,
+          `invalid channels.login.status params: ${formatValidationErrors(validateChannelsLoginStatusParams.errors)}`,
+        ),
+      );
+      return;
+    }
+
+    try {
+      const payload = getChannelLoginSessionStatus({
+        channel: (params as { channel: string }).channel,
+        loginKey:
+          typeof (params as { loginKey?: unknown }).loginKey === "string"
+            ? (params as { loginKey?: string }).loginKey
+            : undefined,
+        accountId:
+          typeof (params as { accountId?: unknown }).accountId === "string"
+            ? (params as { accountId?: string }).accountId
+            : undefined,
+        context,
+      });
+      respond(true, payload, undefined);
+    } catch (err) {
+      respond(false, undefined, errorShape(ErrorCodes.UNAVAILABLE, formatForLog(err)));
+    }
+  },
+  "channels.login.refresh": async ({ params, respond, context }) => {
+    if (!validateChannelsLoginRefreshParams(params)) {
+      respond(
+        false,
+        undefined,
+        errorShape(
+          ErrorCodes.INVALID_REQUEST,
+          `invalid channels.login.refresh params: ${formatValidationErrors(validateChannelsLoginRefreshParams.errors)}`,
+        ),
+      );
+      return;
+    }
+
+    try {
+      const payload = await refreshChannelLoginSession({
+        channel: (params as { channel: string }).channel,
+        loginKey:
+          typeof (params as { loginKey?: unknown }).loginKey === "string"
+            ? (params as { loginKey?: string }).loginKey
+            : undefined,
+        accountId:
+          typeof (params as { accountId?: unknown }).accountId === "string"
+            ? (params as { accountId?: string }).accountId
+            : undefined,
+        timeoutMs:
+          typeof (params as { timeoutMs?: unknown }).timeoutMs === "number"
+            ? (params as { timeoutMs?: number }).timeoutMs
+            : undefined,
+        verbose: Boolean((params as { verbose?: boolean }).verbose),
+        context,
       });
       respond(true, payload, undefined);
     } catch (err) {
