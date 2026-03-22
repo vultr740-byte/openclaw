@@ -240,6 +240,26 @@ function runEntrypointBootstrapFunctions(params: { env?: Record<string, string |
   return { result, invocations };
 }
 
+function runEntrypointPrelude(params: { env?: Record<string, string | undefined>; input: string }) {
+  const entrypointSource = readFileSync(
+    path.join(process.cwd(), "scripts/docker-entrypoint.sh"),
+    "utf8",
+  );
+  const preludeMatch = entrypointSource.match(/^([\s\S]*?)\nif \[ "\$\(id -u\)" = "0" \]; then\n/);
+  expect(preludeMatch, "failed to find shell prelude in scripts/docker-entrypoint.sh").toBeTruthy();
+  const prelude = preludeMatch ? preludeMatch[1] : "";
+
+  return spawnSync("bash", ["-s"], {
+    cwd: process.cwd(),
+    env: {
+      ...process.env,
+      ...params.env,
+    },
+    encoding: "utf8",
+    input: `${prelude}\n${params.input}\n`,
+  });
+}
+
 describe("docker-entrypoint channel bootstrap", () => {
   it("calls the internal bootstrap command with public Discord env vars", () => {
     const { result, invocations } = runEntrypointBootstrapFunctions({
@@ -308,5 +328,33 @@ describe("docker-entrypoint channel bootstrap", () => {
         },
       },
     ]);
+  });
+});
+
+describe("docker-entrypoint home sync", () => {
+  it("aligns HOME with explicit OPENCLAW_HOME for third-party tools", () => {
+    const result = runEntrypointPrelude({
+      env: {
+        HOME: "/root",
+        OPENCLAW_HOME: "/data",
+      },
+      input: 'printf "%s\\n" "$HOME|$OPENCLAW_HOME"',
+    });
+
+    expect(result.status, result.stderr || result.stdout).toBe(0);
+    expect(result.stdout.trim()).toBe("/data|/data");
+  });
+
+  it("derives OPENCLAW_HOME from canonical OPENCLAW_STATE_DIR when missing", () => {
+    const result = runEntrypointPrelude({
+      env: {
+        HOME: "/root",
+        OPENCLAW_STATE_DIR: "/data/.openclaw",
+      },
+      input: 'printf "%s\\n" "${OPENCLAW_HOME:-}|$HOME"',
+    });
+
+    expect(result.status, result.stderr || result.stdout).toBe(0);
+    expect(result.stdout.trim()).toBe("/data|/data");
   });
 });

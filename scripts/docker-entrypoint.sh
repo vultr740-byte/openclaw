@@ -20,6 +20,31 @@ if [ "${OPENCLAW_RUN_AS_ROOT:-}" = "1" ]; then
   runtime_owner="root:root"
 fi
 
+# Keep third-party tools that only consult $HOME/os.homedir() on the same
+# persistent volume as OpenClaw's state/config paths.
+sync_runtime_home() {
+  local inferred_home="${OPENCLAW_HOME:-}"
+
+  if [ -z "$inferred_home" ] && [ -n "${OPENCLAW_STATE_DIR:-}" ]; then
+    case "${OPENCLAW_STATE_DIR}" in
+      */.openclaw)
+        inferred_home="${OPENCLAW_STATE_DIR%/.openclaw}"
+        ;;
+    esac
+  fi
+
+  if [ -z "$inferred_home" ] && [ -d /data ]; then
+    inferred_home="/data"
+  fi
+
+  if [ -n "$inferred_home" ]; then
+    export OPENCLAW_HOME="$inferred_home"
+    export HOME="$inferred_home"
+  fi
+}
+
+sync_runtime_home
+
 run_as_runtime_user() {
   if [ "$(id -u)" = "0" ] && [ "${OPENCLAW_RUN_AS_ROOT:-}" != "1" ]; then
     gosu node "$@"
