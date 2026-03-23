@@ -59,15 +59,38 @@ Set these variables on the service:
 
 - `SETUP_PASSWORD` (required)
 - `PORT=8080` (required — must match the port in Public Networking)
-- `OPENCLAW_STATE_DIR=/data/.openclaw` (recommended)
-- `OPENCLAW_WORKSPACE_DIR=/data/workspace` (recommended)
+- `OPENCLAW_HOME=/data` (recommended; minimal persistent root)
+- `OPENCLAW_STATE_DIR=/data/.openclaw` (optional explicit override)
+- `OPENCLAW_WORKSPACE_DIR=/data/workspace` (optional explicit override)
 - `OPENCLAW_GATEWAY_TOKEN` (recommended; treat as an admin secret)
+
+If you only set `OPENCLAW_HOME=/data`, startup will derive:
+
+- state at `/data/.openclaw`
+- workspace at `/data/.openclaw/workspace`
+
+If you use a different Railway Volume mount path, keep `OPENCLAW_HOME` aligned
+to that mount. Only set `OPENCLAW_STATE_DIR` and `OPENCLAW_WORKSPACE_DIR` when
+you want explicit non-default paths, and keep them aligned to the same root.
 
 ## Env only setup (skip /setup)
 
 If you want a fully automated deploy with no in-browser setup, use the config
-template + env variables path. The entrypoint will create
-`$OPENCLAW_STATE_DIR/openclaw.json` on first boot.
+template + env variables path.
+
+For path variables, the minimal setup is:
+
+- `OPENCLAW_HOME=/data`
+
+With only that variable set, the entrypoint will derive:
+
+- `OPENCLAW_STATE_DIR=/data/.openclaw`
+- `OPENCLAW_WORKSPACE_DIR=/data/.openclaw/workspace`
+- config path `/data/.openclaw/openclaw.json`
+
+Set `OPENCLAW_STATE_DIR` or `OPENCLAW_WORKSPACE_DIR` only when you want an
+explicit override, such as the legacy/custom workspace layout
+`OPENCLAW_WORKSPACE_DIR=/data/workspace`.
 
 Add these variables:
 
@@ -88,7 +111,7 @@ Notes:
 - WebChat is mounted at `https://<your-railway-domain>/webchat/` on the same domain as the gateway.
 - By default the template allowlists `https://${RAILWAY_STATIC_URL}` for browser-origin checks; startup also auto-derives this origin when `OPENCLAW_CONTROL_UI_ALLOWED_ORIGINS` is unset.
 - If `TELEGRAM_ALLOW_FROM` (or JSON variant) is empty, Telegram DMs are blocked.
-- Missing env vars referenced in the template will block startup.
+- Missing required env vars referenced in the template can block startup or leave the affected feature unavailable.
 - To change the model or allowlist later, update the env vars and redeploy.
 
 ## Setup flow

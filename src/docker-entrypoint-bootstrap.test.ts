@@ -11,6 +11,8 @@ import {
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { resolveAgentWorkspaceDir } from "./agents/agent-scope.js";
+import { createConfigIO } from "./config/config.js";
 
 const createdTempDirs: string[] = [];
 
@@ -332,17 +334,29 @@ describe("docker-entrypoint channel bootstrap", () => {
 });
 
 describe("docker-entrypoint home sync", () => {
+  it("preserves non-root HOME for local compose-style runtimes", () => {
+    const result = runEntrypointPrelude({
+      env: {
+        HOME: "/home/node",
+      },
+      input: 'printf "%s\\n" "$HOME|$OPENCLAW_HOME|$OPENCLAW_WORKSPACE_DIR"',
+    });
+
+    expect(result.status, result.stderr || result.stdout).toBe(0);
+    expect(result.stdout.trim()).toBe("/home/node|/home/node|/home/node/.openclaw/workspace");
+  });
+
   it("aligns HOME with explicit OPENCLAW_HOME for third-party tools", () => {
     const result = runEntrypointPrelude({
       env: {
         HOME: "/root",
         OPENCLAW_HOME: "/data",
       },
-      input: 'printf "%s\\n" "$HOME|$OPENCLAW_HOME"',
+      input: 'printf "%s\\n" "$HOME|$OPENCLAW_HOME|$OPENCLAW_WORKSPACE_DIR"',
     });
 
     expect(result.status, result.stderr || result.stdout).toBe(0);
-    expect(result.stdout.trim()).toBe("/data|/data");
+    expect(result.stdout.trim()).toBe("/data|/data|/data/.openclaw/workspace");
   });
 
   it("derives OPENCLAW_HOME from canonical OPENCLAW_STATE_DIR when missing", () => {
@@ -351,10 +365,87 @@ describe("docker-entrypoint home sync", () => {
         HOME: "/root",
         OPENCLAW_STATE_DIR: "/data/.openclaw",
       },
-      input: 'printf "%s\\n" "${OPENCLAW_HOME:-}|$HOME"',
+      input: 'printf "%s\\n" "${OPENCLAW_HOME:-}|$HOME|$OPENCLAW_WORKSPACE_DIR"',
     });
 
     expect(result.status, result.stderr || result.stdout).toBe(0);
-    expect(result.stdout.trim()).toBe("/data|/data");
+    expect(result.stdout.trim()).toBe("/data|/data|/data/.openclaw/workspace");
+  });
+
+  it("falls back to /data when the container default home would otherwise be /root", () => {
+    const result = runEntrypointPrelude({
+      env: {
+        HOME: "/root",
+      },
+      input: 'printf "%s\\n" "$HOME|$OPENCLAW_HOME|$OPENCLAW_WORKSPACE_DIR"',
+    });
+
+    expect(result.status, result.stderr || result.stdout).toBe(0);
+    expect(result.stdout.trim()).toBe("/data|/data|/data/.openclaw/workspace");
+  });
+
+  it("bootstraps env-only railway config from OPENCLAW_HOME alone", () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), "openclaw-entrypoint-home-test-"));
+    createdTempDirs.push(dir);
+
+    const runtimeHome = path.join(dir, "data");
+    const workspaceDir = path.join(runtimeHome, ".openclaw", "workspace");
+    const configPath = path.join(runtimeHome, ".openclaw", "openclaw.json");
+    const templatePath = path.join(process.cwd(), "config/openclaw.railway.template.json");
+    const gatewayToken = "gateway-token";
+    const openAiApiKey = "openai-api-key";
+    const openAiBaseUrl = "https://example.com/v1";
+    const openAiMode = "openai-responses";
+    const openAiModel = "gpt-5.2";
+    const telegramBotToken = "telegram-token";
+    const telegramAllowFrom = "123456789";
+
+    const result = runEntrypointPrelude({
+      env: {
+        HOME: "/root",
+        OPENCLAW_HOME: runtimeHome,
+        OPENCLAW_CONFIG_TEMPLATE: templatePath,
+        OPENCLAW_GATEWAY_TOKEN: gatewayToken,
+        OPENAI_API_KEY: openAiApiKey,
+        OPENAI_BASE_URL: openAiBaseUrl,
+        OPENAI_API_MODE: openAiMode,
+        OPENAI_MODEL: openAiModel,
+        TELEGRAM_BOT_TOKEN: telegramBotToken,
+        TELEGRAM_ALLOW_FROM: telegramAllowFrom,
+      },
+      input: 'ensure_workspace\nbootstrap_config\nprintf "%s\\n" "$OPENCLAW_WORKSPACE_DIR"',
+    });
+
+    expect(result.status, result.stderr || result.stdout).toBe(0);
+    expect(result.stdout.trim()).toBe(workspaceDir);
+    expect(existsSync(configPath)).toBe(true);
+    expect(existsSync(path.join(workspaceDir, "MEMORY.md"))).toBe(true);
+
+    const rawConfig = JSON.parse(readFileSync(configPath, "utf8")) as {
+      agents?: { defaults?: { workspace?: string } };
+    };
+    expect(rawConfig.agents?.defaults?.workspace).toBe("${OPENCLAW_WORKSPACE_DIR}");
+
+    const configEnv = {
+      ...process.env,
+      HOME: runtimeHome,
+      OPENCLAW_HOME: runtimeHome,
+      OPENCLAW_WORKSPACE_DIR: workspaceDir,
+      OPENCLAW_GATEWAY_TOKEN: gatewayToken,
+      OPENAI_API_KEY: openAiApiKey,
+      OPENAI_BASE_URL: openAiBaseUrl,
+      OPENAI_API_MODE: openAiMode,
+      OPENAI_MODEL: openAiModel,
+      TELEGRAM_BOT_TOKEN: telegramBotToken,
+      TELEGRAM_ALLOW_FROM: telegramAllowFrom,
+    };
+    const cfg = createConfigIO({
+      configPath,
+      env: configEnv,
+      homedir: () => runtimeHome,
+    }).loadConfig();
+
+    expect(cfg.agents?.defaults?.workspace).toBe(workspaceDir);
+    expect(resolveAgentWorkspaceDir(cfg, "main")).toBe(workspaceDir);
   });
 });

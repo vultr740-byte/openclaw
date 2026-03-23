@@ -119,10 +119,8 @@ RUN ln -sf /app/openclaw.mjs /usr/local/bin/openclaw \
  && chmod 755 /app/openclaw.mjs
 
 ENV NODE_ENV=production
-# Keep container home on the persistent volume so third-party tools that only
-# consult $HOME/os.homedir() do not write to /root or /home/node.
-ENV OPENCLAW_HOME=/data
-ENV HOME=/data
+# Runtime home/state defaults are resolved by the entrypoint so each deployment
+# can point OpenClaw at its own persistent mount root.
 # Allow running the gateway as root when required by the host environment.
 ENV OPENCLAW_RUN_AS_ROOT=1
 

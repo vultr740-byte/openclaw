@@ -11,10 +11,6 @@ if [ -z "${OPENCLAW_GATEWAY_BIND:-}" ]; then
   fi
 fi
 
-if [ -z "${OPENCLAW_WORKSPACE_DIR:-}" ]; then
-  export OPENCLAW_WORKSPACE_DIR="/data/workspace"
-fi
-
 runtime_owner="node:node"
 if [ "${OPENCLAW_RUN_AS_ROOT:-}" = "1" ]; then
   runtime_owner="root:root"
@@ -24,6 +20,7 @@ fi
 # persistent volume as OpenClaw's state/config paths.
 sync_runtime_home() {
   local inferred_home="${OPENCLAW_HOME:-}"
+  local current_home="${HOME:-}"
 
   if [ -z "$inferred_home" ] && [ -n "${OPENCLAW_STATE_DIR:-}" ]; then
     case "${OPENCLAW_STATE_DIR}" in
@@ -33,7 +30,11 @@ sync_runtime_home() {
     esac
   fi
 
-  if [ -z "$inferred_home" ] && [ -d /data ]; then
+  if [ -z "$inferred_home" ] && [ -n "$current_home" ] && [ "$current_home" != "/root" ]; then
+    inferred_home="$current_home"
+  fi
+
+  if [ -z "$inferred_home" ]; then
     inferred_home="/data"
   fi
 
@@ -43,7 +44,29 @@ sync_runtime_home() {
   fi
 }
 
+default_state_dir() {
+  local home_root="${OPENCLAW_HOME:-${HOME:-}}"
+  if [ -n "$home_root" ]; then
+    printf '%s/.openclaw' "${home_root%/}"
+    return
+  fi
+  printf '%s' "/data/.openclaw"
+}
+
+default_workspace_dir() {
+  local home_root="${OPENCLAW_HOME:-${HOME:-}}"
+  if [ -n "$home_root" ]; then
+    printf '%s/.openclaw/workspace' "${home_root%/}"
+    return
+  fi
+  printf '%s' "/data/.openclaw/workspace"
+}
+
 sync_runtime_home
+
+if [ -z "${OPENCLAW_WORKSPACE_DIR:-}" ]; then
+  export OPENCLAW_WORKSPACE_DIR="$(default_workspace_dir)"
+fi
 
 run_as_runtime_user() {
   if [ "$(id -u)" = "0" ] && [ "${OPENCLAW_RUN_AS_ROOT:-}" != "1" ]; then
@@ -78,7 +101,10 @@ if [ "$should_inject_bind" = "true" ] && [ "$has_bind" = "false" ] && [ -n "${OP
 fi
 
 ensure_workspace() {
-  local workspace_dir="${OPENCLAW_WORKSPACE_DIR:-/data/workspace}"
+  local workspace_dir="${OPENCLAW_WORKSPACE_DIR:-}"
+  if [ -z "$workspace_dir" ]; then
+    workspace_dir="$(default_workspace_dir)"
+  fi
   mkdir -p "$workspace_dir"
   local memory_file="$workspace_dir/MEMORY.md"
   if [ ! -f "$memory_file" ]; then
@@ -88,7 +114,11 @@ ensure_workspace() {
 
 ensure_legacy_workspace() {
   local legacy_dir="/home/node/.openclaw/workspace"
-  if [ "$legacy_dir" = "${OPENCLAW_WORKSPACE_DIR:-/data/workspace}" ]; then
+  local workspace_dir="${OPENCLAW_WORKSPACE_DIR:-}"
+  if [ -z "$workspace_dir" ]; then
+    workspace_dir="$(default_workspace_dir)"
+  fi
+  if [ "$legacy_dir" = "$workspace_dir" ]; then
     return 0
   fi
   mkdir -p "$legacy_dir"
@@ -121,7 +151,10 @@ bootstrap_config() {
     exit 1
   fi
 
-  local state_dir="${OPENCLAW_STATE_DIR:-/data/.openclaw}"
+  local state_dir="${OPENCLAW_STATE_DIR:-}"
+  if [ -z "$state_dir" ]; then
+    state_dir="$(default_state_dir)"
+  fi
   local config_path="${OPENCLAW_CONFIG_PATH:-$state_dir/openclaw.json}"
   local should_copy="false"
   if [ ! -f "$config_path" ] || [ "${OPENCLAW_CONFIG_TEMPLATE_FORCE:-}" = "1" ]; then
@@ -432,7 +465,7 @@ NODE
 }
 
 if [ "$(id -u)" = "0" ]; then
-  mkdir -p /data /data/.openclaw /data/workspace
+  mkdir -p /data /data/.openclaw
   ensure_workspace
   ensure_legacy_workspace
   chown -R "$runtime_owner" /data
