@@ -6,12 +6,6 @@ on:
       - main
     tags:
       - "v*"
-    paths-ignore:
-      - "docs/**"
-      - "**/*.md"
-      - "**/*.mdx"
-      - ".agents/**"
-      - "skills/**"
 
 concurrency:
   group: docker-release-${{ github.workflow }}-${{ github.ref }}
