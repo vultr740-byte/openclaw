@@ -54,9 +54,12 @@ jobs:
           set -euo pipefail
           tags=()
           slim_tags=()
+          short_sha="${GITHUB_SHA::12}"
           if [[ "${GITHUB_REF}" == "refs/heads/main" ]]; then
             tags+=("${IMAGE}:main-amd64")
+            tags+=("${IMAGE}:sha-${short_sha}-amd64")
             slim_tags+=("${IMAGE}:main-slim-amd64")
+            slim_tags+=("${IMAGE}:sha-${short_sha}-slim-amd64")
           fi
           if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
             version="${GITHUB_REF#refs/tags/v}"
@@ -155,9 +158,12 @@ jobs:
           set -euo pipefail
           tags=()
           slim_tags=()
+          short_sha="${GITHUB_SHA::12}"
           if [[ "${GITHUB_REF}" == "refs/heads/main" ]]; then
             tags+=("${IMAGE}:main-arm64")
+            tags+=("${IMAGE}:sha-${short_sha}-arm64")
             slim_tags+=("${IMAGE}:main-slim-arm64")
+            slim_tags+=("${IMAGE}:sha-${short_sha}-slim-arm64")
           fi
           if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
             version="${GITHUB_REF#refs/tags/v}"
@@ -251,9 +257,12 @@ jobs:
           set -euo pipefail
           tags=()
           slim_tags=()
+          short_sha="${GITHUB_SHA::12}"
           if [[ "${GITHUB_REF}" == "refs/heads/main" ]]; then
             tags+=("${IMAGE}:main")
+            tags+=("${IMAGE}:sha-${short_sha}")
             slim_tags+=("${IMAGE}:main-slim")
+            slim_tags+=("${IMAGE}:sha-${short_sha}-slim")
           fi
           if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
             version="${GITHUB_REF#refs/tags/v}"
