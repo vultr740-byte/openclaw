@@ -14,6 +14,7 @@ const installMocks = vi.hoisted(() => ({
 
 const pluginLoaderState = vi.hoisted(() => ({
   installed: false,
+  bundledWeixin: false,
   loadOpenClawPlugins: vi.fn(),
   clearPluginDiscoveryCache: vi.fn(),
 }));
@@ -115,7 +116,7 @@ vi.mock("../plugins/loader.js", async (importOriginal) => {
         ...(pluginLoaderState.installed && qqbotEnabled
           ? [{ pluginId: "openclaw-qqbot", plugin: qqbotPlugin, source: "test" }]
           : []),
-        ...(pluginLoaderState.installed && weixinEnabled
+        ...((pluginLoaderState.installed || pluginLoaderState.bundledWeixin) && weixinEnabled
           ? [{ pluginId: "openclaw-weixin", plugin: weixinPlugin, source: "test" }]
           : []),
       ],
@@ -212,6 +213,7 @@ describe("channelsBootstrapCommand", () => {
     pluginLoaderState.clearPluginDiscoveryCache.mockReset();
     pluginLoaderState.loadOpenClawPlugins.mockClear();
     pluginLoaderState.installed = false;
+    pluginLoaderState.bundledWeixin = false;
     runtime.log.mockClear();
     runtime.error.mockClear();
     runtime.exit.mockClear();
@@ -584,5 +586,33 @@ describe("channelsBootstrapCommand", () => {
       spec: "@tencent-weixin/openclaw-weixin@1.0.3",
       version: "1.0.2",
     });
+  });
+
+  it("uses the bundled weixin plugin when already present", async () => {
+    pluginLoaderState.bundledWeixin = true;
+    configMocks.readConfigFileSnapshotForWrite.mockResolvedValue(makeWriteSnapshot());
+
+    await channelsBootstrapCommand({ channels: "weixin" }, runtime);
+
+    expect(installMocks.installPluginFromNpmSpec).not.toHaveBeenCalled();
+    expect(configMocks.writeConfigFile).toHaveBeenCalledTimes(1);
+
+    const writtenConfig = configMocks.writeConfigFile.mock.calls[0]?.[0] as {
+      channels?: {
+        "openclaw-weixin"?: {
+          enabled?: boolean;
+        };
+      };
+      plugins?: {
+        entries?: Record<string, { enabled?: boolean }>;
+        installs?: Record<string, unknown>;
+      };
+    };
+
+    expect(writtenConfig.channels?.["openclaw-weixin"]).toEqual({
+      enabled: true,
+    });
+    expect(writtenConfig.plugins?.entries?.["openclaw-weixin"]?.enabled).toBe(true);
+    expect(writtenConfig.plugins?.installs?.["openclaw-weixin"]).toBeUndefined();
   });
 });
