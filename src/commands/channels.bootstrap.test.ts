@@ -559,7 +559,7 @@ describe("channelsBootstrapCommand", () => {
     await channelsBootstrapCommand({ channels: "weixin" }, runtime);
 
     expect(installMocks.installPluginFromNpmSpec).toHaveBeenCalledWith({
-      spec: "@tencent-weixin/openclaw-weixin@latest",
+      spec: "@tencent-weixin/openclaw-weixin@1.0.3",
       expectedPluginId: "openclaw-weixin",
       logger: expect.any(Object),
     });
@@ -581,7 +581,7 @@ describe("channelsBootstrapCommand", () => {
     });
     expect(writtenConfig.plugins?.entries?.["openclaw-weixin"]?.enabled).toBe(true);
     expect(writtenConfig.plugins?.installs?.["openclaw-weixin"]).toMatchObject({
-      spec: "@tencent-weixin/openclaw-weixin@latest",
+      spec: "@tencent-weixin/openclaw-weixin@1.0.3",
       version: "1.0.2",
     });
   });

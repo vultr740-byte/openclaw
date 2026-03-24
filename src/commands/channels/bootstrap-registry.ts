@@ -128,7 +128,7 @@ const bootstrapChannelEntries: BootstrapChannelEntry[] = [
     publicId: "weixin",
     channelId: "openclaw-weixin",
     pluginId: "openclaw-weixin",
-    npmSpec: "@tencent-weixin/openclaw-weixin@latest",
+    npmSpec: "@tencent-weixin/openclaw-weixin@1.0.3",
     requiredEnv: [],
     applyConfig: ({ cfg }) => {
       const existing = resolveChannelSection(cfg, "openclaw-weixin");
