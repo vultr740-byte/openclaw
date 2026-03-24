@@ -3,7 +3,7 @@ name: Docker Preview Image
 on:
   push:
     branches:
-      - railway-prebuilt-images
+      - railway-images
   workflow_dispatch:
 
 concurrency:
