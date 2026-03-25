@@ -280,6 +280,10 @@ export async function startGatewayServer(
     key: "OPENCLAW_RAW_STREAM_PATH",
     description: "raw stream log path override",
   });
+  logAcceptedEnvOption({
+    key: "OPENCLAW_RAW_STREAM_MODE",
+    description: "raw stream logging mode override",
+  });
 
   let configSnapshot = await readConfigFileSnapshot();
   if (configSnapshot.legacyIssues.length > 0) {
