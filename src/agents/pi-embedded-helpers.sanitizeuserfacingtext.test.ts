@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { withEnv } from "../test-utils/env.js";
 import {
   downgradeOpenAIFunctionCallReasoningPairs,
   downgradeOpenAIReasoningBlocks,
@@ -66,6 +67,16 @@ describe("sanitizeUserFacingText", () => {
     const text = "billing: please upgrade your plan";
     expect(sanitizeUserFacingText(text, { errorContext: true })).toBe(
       "⚠️ Model balance is insufficient. Please top up and try again.",
+    );
+  });
+
+  it("adds the recharge URL to sanitized billing errors when OPENCLAW_ACCOUNT_ID is set", () => {
+    const text = "billing: please upgrade your plan";
+    const result = withEnv({ OPENCLAW_ACCOUNT_ID: "weixin_cf69eddb0947fd8e" }, () =>
+      sanitizeUserFacingText(text, { errorContext: true }),
+    );
+    expect(result).toBe(
+      "⚠️ Model balance is insufficient. Please top up and try again. https://www.xialiao.app/recharge/weixin_cf69eddb0947fd8e",
     );
   });
 

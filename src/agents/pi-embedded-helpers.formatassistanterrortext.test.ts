@@ -1,5 +1,6 @@
 import type { AssistantMessage } from "@mariozechner/pi-ai";
 import { describe, expect, it } from "vitest";
+import { withEnv } from "../test-utils/env.js";
 import {
   BILLING_ERROR_USER_MESSAGE,
   formatBillingErrorMessage,
@@ -116,6 +117,23 @@ describe("formatAssistantErrorText", () => {
     const result = formatAssistantErrorText(msg);
     expect(result).toContain("Model balance is insufficient");
     expect(result).toBe(BILLING_ERROR_USER_MESSAGE);
+  });
+  it("appends recharge URL when OPENCLAW_ACCOUNT_ID is configured", () => {
+    const msg = makeAssistantError("insufficient credits");
+    const result = withEnv({ OPENCLAW_ACCOUNT_ID: "weixin_cf69eddb0947fd8e" }, () =>
+      formatAssistantErrorText(msg),
+    );
+    expect(result).toBe(
+      `${BILLING_ERROR_USER_MESSAGE} https://www.xialiao.app/recharge/weixin_cf69eddb0947fd8e`,
+    );
+  });
+  it("URL-encodes OPENCLAW_ACCOUNT_ID when building the recharge link", () => {
+    const result = withEnv({ OPENCLAW_ACCOUNT_ID: "weixin account/with spaces" }, () =>
+      formatBillingErrorMessage(),
+    );
+    expect(result).toBe(
+      `${BILLING_ERROR_USER_MESSAGE} https://www.xialiao.app/recharge/weixin%20account%2Fwith%20spaces`,
+    );
   });
   it("returns a friendly message for rate limit errors", () => {
     const msg = makeAssistantError("429 rate limit reached");

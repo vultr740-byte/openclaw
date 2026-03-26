@@ -26,13 +26,25 @@ export {
 
 const log = createSubsystemLogger("errors");
 
+const BILLING_RECHARGE_BASE_URL = "https://www.xialiao.app/recharge/";
+
+export const BILLING_ERROR_USER_MESSAGE =
+  "⚠️ Model balance is insufficient. Please top up and try again.";
+
+function resolveBillingRechargeUrl(env: NodeJS.ProcessEnv = process.env): string | null {
+  const accountId = env.OPENCLAW_ACCOUNT_ID?.trim();
+  if (!accountId) {
+    return null;
+  }
+  return `${BILLING_RECHARGE_BASE_URL}${encodeURIComponent(accountId)}`;
+}
+
 export function formatBillingErrorMessage(provider?: string, model?: string): string {
   void provider;
   void model;
-  return "⚠️ Model balance is insufficient. Please top up and try again.";
+  const rechargeUrl = resolveBillingRechargeUrl();
+  return rechargeUrl ? `${BILLING_ERROR_USER_MESSAGE} ${rechargeUrl}` : BILLING_ERROR_USER_MESSAGE;
 }
-
-export const BILLING_ERROR_USER_MESSAGE = formatBillingErrorMessage();
 
 const RATE_LIMIT_ERROR_USER_MESSAGE = "⚠️ API rate limit reached. Please try again later.";
 const OVERLOADED_ERROR_USER_MESSAGE =
@@ -741,7 +753,7 @@ export function sanitizeUserFacingText(text: string, opts?: { errorContext?: boo
     }
 
     if (isBillingErrorMessage(trimmed)) {
-      return BILLING_ERROR_USER_MESSAGE;
+      return formatBillingErrorMessage();
     }
 
     if (isRawApiErrorPayload(trimmed) || isLikelyHttpErrorText(trimmed)) {
