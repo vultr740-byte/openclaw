@@ -1,5 +1,6 @@
 import type { AssistantMessage } from "@mariozechner/pi-ai";
 import { describe, expect, it } from "vitest";
+import { withEnv } from "../../../test-utils/env.js";
 import { formatBillingErrorMessage } from "../../pi-embedded-helpers.js";
 import { makeAssistantMessageFixture } from "../../test-helpers/assistant-message-fixtures.js";
 import {
@@ -101,6 +102,27 @@ describe("buildEmbeddedRunPayloads", () => {
     expect(payloads[0]?.text).not.toContain("Anthropic");
     expect(payloads[0]?.text).not.toContain("claude-3-5-sonnet");
     expect(payloads[0]?.isError).toBe(true);
+  });
+
+  it("sends the recharge URL as a separate payload for billing errors", () => {
+    const payloads = withEnv({ OPENCLAW_ACCOUNT_ID: "webclaw:claw:weixin:74339e895533e12f" }, () =>
+      buildPayloads({
+        lastAssistant: makeAssistant({
+          errorMessage: "insufficient credits",
+          content: [{ type: "text", text: "insufficient credits" }],
+        }),
+      }),
+    );
+
+    expect(payloads).toHaveLength(2);
+    expect(payloads[0]).toMatchObject({
+      text: formatBillingErrorMessage(),
+      isError: true,
+    });
+    expect(payloads[1]).toMatchObject({
+      text: "https://www.xialiao.app/recharge/webclaw:claw:weixin:74339e895533e12f",
+    });
+    expect(payloads[1]?.isError).toBeUndefined();
   });
 
   it("suppresses raw error JSON even when errorMessage is missing", () => {

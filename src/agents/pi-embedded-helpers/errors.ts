@@ -31,19 +31,22 @@ const BILLING_RECHARGE_BASE_URL = "https://www.xialiao.app/recharge/";
 export const BILLING_ERROR_USER_MESSAGE =
   "⚠️ Model balance is insufficient. Please top up and try again.";
 
-function resolveBillingRechargeUrl(env: NodeJS.ProcessEnv = process.env): string | null {
+function encodeBillingAccountIdForPath(accountId: string): string {
+  return encodeURIComponent(accountId).replace(/%3A/gi, ":");
+}
+
+export function resolveBillingRechargeUrl(env: NodeJS.ProcessEnv = process.env): string | null {
   const accountId = env.OPENCLAW_ACCOUNT_ID?.trim();
   if (!accountId) {
     return null;
   }
-  return `${BILLING_RECHARGE_BASE_URL}${encodeURIComponent(accountId)}`;
+  return `${BILLING_RECHARGE_BASE_URL}${encodeBillingAccountIdForPath(accountId)}`;
 }
 
 export function formatBillingErrorMessage(provider?: string, model?: string): string {
   void provider;
   void model;
-  const rechargeUrl = resolveBillingRechargeUrl();
-  return rechargeUrl ? `${BILLING_ERROR_USER_MESSAGE} ${rechargeUrl}` : BILLING_ERROR_USER_MESSAGE;
+  return BILLING_ERROR_USER_MESSAGE;
 }
 
 const RATE_LIMIT_ERROR_USER_MESSAGE = "⚠️ API rate limit reached. Please try again later.";

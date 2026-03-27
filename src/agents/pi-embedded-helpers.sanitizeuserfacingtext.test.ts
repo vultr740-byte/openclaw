@@ -70,14 +70,12 @@ describe("sanitizeUserFacingText", () => {
     );
   });
 
-  it("adds the recharge URL to sanitized billing errors when OPENCLAW_ACCOUNT_ID is set", () => {
+  it("keeps sanitized billing errors generic when OPENCLAW_ACCOUNT_ID is set", () => {
     const text = "billing: please upgrade your plan";
     const result = withEnv({ OPENCLAW_ACCOUNT_ID: "weixin_cf69eddb0947fd8e" }, () =>
       sanitizeUserFacingText(text, { errorContext: true }),
     );
-    expect(result).toBe(
-      "⚠️ Model balance is insufficient. Please top up and try again. https://www.xialiao.app/recharge/weixin_cf69eddb0947fd8e",
-    );
+    expect(result).toBe("⚠️ Model balance is insufficient. Please top up and try again.");
   });
 
   it("sanitizes raw API error payloads", () => {

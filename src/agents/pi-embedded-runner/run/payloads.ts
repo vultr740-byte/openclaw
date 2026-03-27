@@ -11,6 +11,7 @@ import {
   getApiErrorPayloadFingerprint,
   isRawApiErrorPayload,
   normalizeTextForComparison,
+  resolveBillingRechargeUrl,
 } from "../../pi-embedded-helpers.js";
 import type { ToolResultFormat } from "../../pi-embedded-subscribe.js";
 import {
@@ -155,9 +156,16 @@ export function buildEmbeddedRunPayloads(params: {
     : null;
   const normalizedErrorText = errorText ? normalizeTextForComparison(errorText) : null;
   const normalizedGenericBillingErrorText = normalizeTextForComparison(BILLING_ERROR_USER_MESSAGE);
+  const billingRechargeUrl =
+    errorText && normalizedErrorText === normalizedGenericBillingErrorText
+      ? resolveBillingRechargeUrl()
+      : null;
   const genericErrorText = "The AI service returned an error. Please try again.";
   if (errorText) {
     replyItems.push({ text: errorText, isError: true });
+    if (billingRechargeUrl) {
+      replyItems.push({ text: billingRechargeUrl });
+    }
   }
 
   const inlineToolResults =

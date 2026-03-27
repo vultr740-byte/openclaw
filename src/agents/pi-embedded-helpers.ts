@@ -12,6 +12,7 @@ export {
 export {
   BILLING_ERROR_USER_MESSAGE,
   formatBillingErrorMessage,
+  resolveBillingRechargeUrl,
   classifyFailoverReason,
   classifyFailoverReasonFromHttpStatus,
   formatRawAssistantErrorForUi,
