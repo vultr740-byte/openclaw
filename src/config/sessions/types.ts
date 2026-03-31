@@ -73,6 +73,8 @@ export type SessionEntry = {
   lastHeartbeatText?: string;
   /** Timestamp (ms) when lastHeartbeatText was delivered. */
   lastHeartbeatSentAt?: number;
+  /** Timestamp (ms) when the user last sent a real inbound message in this session. */
+  lastUserMessageAt?: number;
   sessionId: string;
   updatedAt: number;
   sessionFile?: string;

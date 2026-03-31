@@ -422,9 +422,10 @@ describe("docker-entrypoint home sync", () => {
     expect(existsSync(path.join(workspaceDir, "MEMORY.md"))).toBe(true);
 
     const rawConfig = JSON.parse(readFileSync(configPath, "utf8")) as {
-      agents?: { defaults?: { workspace?: string } };
+      agents?: { defaults?: { workspace?: string; heartbeat?: { target?: string } } };
     };
     expect(rawConfig.agents?.defaults?.workspace).toBe("${OPENCLAW_WORKSPACE_DIR}");
+    expect(rawConfig.agents?.defaults?.heartbeat?.target).toBe("last");
 
     const configEnv = {
       ...process.env,
@@ -446,6 +447,7 @@ describe("docker-entrypoint home sync", () => {
     }).loadConfig();
 
     expect(cfg.agents?.defaults?.workspace).toBe(workspaceDir);
+    expect(cfg.agents?.defaults?.heartbeat?.target).toBe("last");
     expect(resolveAgentWorkspaceDir(cfg, "main")).toBe(workspaceDir);
   });
 });

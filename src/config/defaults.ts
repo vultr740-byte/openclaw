@@ -432,7 +432,7 @@ export function applyContextPruningDefaults(cfg: OpenClawConfig): OpenClawConfig
   if (defaults.heartbeat?.every === undefined) {
     nextDefaults.heartbeat = {
       ...heartbeat,
-      every: authMode === "oauth" ? "1h" : "30m",
+      every: "30m",
     };
     mutated = true;
   }

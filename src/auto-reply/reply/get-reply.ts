@@ -153,6 +153,7 @@ export async function getReplyFromConfig(
     ctx: finalized,
     cfg,
     commandAuthorized,
+    recordUserActivity: opts?.isHeartbeat !== true,
   });
   let {
     sessionCtx,
