@@ -14,8 +14,10 @@ import {
   ensureAgentWorkspace,
   filterBootstrapFilesForSession,
   loadWorkspaceBootstrapFiles,
+  readWorkspaceOnboardingStateForDir,
   resolveDefaultAgentWorkspaceDir,
   type WorkspaceBootstrapFile,
+  writeWorkspaceOnboardingStateForDir,
 } from "./workspace.js";
 
 describe("resolveDefaultAgentWorkspaceDir", () => {
@@ -35,12 +37,16 @@ async function readOnboardingState(dir: string): Promise<{
   version: number;
   bootstrapSeededAt?: string;
   onboardingCompletedAt?: string;
+  languageInferenceAttemptedAt?: string;
+  timezoneInferenceAttemptedAt?: string;
 }> {
   const raw = await fs.readFile(path.join(dir, ...WORKSPACE_STATE_PATH_SEGMENTS), "utf-8");
   return JSON.parse(raw) as {
     version: number;
     bootstrapSeededAt?: string;
     onboardingCompletedAt?: string;
+    languageInferenceAttemptedAt?: string;
+    timezoneInferenceAttemptedAt?: string;
   };
 }
 
@@ -253,5 +259,29 @@ describe("filterBootstrapFilesForSession", () => {
   it("filters to allowlist for cron sessions", () => {
     const result = filterBootstrapFilesForSession(mockFiles, "agent:default:cron:daily-check");
     expectSubagentAllowedBootstrapNames(result);
+  });
+});
+
+describe("workspace onboarding state helpers", () => {
+  it("round-trips profile inference attempt markers", async () => {
+    const tempDir = await makeTempWorkspace("openclaw-workspace-state-");
+
+    await writeWorkspaceOnboardingStateForDir(tempDir, {
+      version: 1,
+      bootstrapSeededAt: "2026-04-01T00:00:00.000Z",
+      onboardingCompletedAt: "2026-04-01T01:00:00.000Z",
+      languageInferenceAttemptedAt: "2026-04-01T02:00:00.000Z",
+      timezoneInferenceAttemptedAt: "2026-04-01T03:00:00.000Z",
+    });
+
+    const state = await readWorkspaceOnboardingStateForDir(tempDir);
+
+    expect(state).toEqual({
+      version: 1,
+      bootstrapSeededAt: "2026-04-01T00:00:00.000Z",
+      onboardingCompletedAt: "2026-04-01T01:00:00.000Z",
+      languageInferenceAttemptedAt: "2026-04-01T02:00:00.000Z",
+      timezoneInferenceAttemptedAt: "2026-04-01T03:00:00.000Z",
+    });
   });
 });

@@ -159,10 +159,12 @@ export type ExtraBootstrapLoadDiagnostic = {
   detail: string;
 };
 
-type WorkspaceOnboardingState = {
+export type WorkspaceOnboardingState = {
   version: typeof WORKSPACE_STATE_VERSION;
   bootstrapSeededAt?: string;
   onboardingCompletedAt?: string;
+  languageInferenceAttemptedAt?: string;
+  timezoneInferenceAttemptedAt?: string;
 };
 
 /** Set of recognized bootstrap filenames for runtime validation */
@@ -212,6 +214,8 @@ function parseWorkspaceOnboardingState(raw: string): WorkspaceOnboardingState | 
     const parsed = JSON.parse(raw) as {
       bootstrapSeededAt?: unknown;
       onboardingCompletedAt?: unknown;
+      languageInferenceAttemptedAt?: unknown;
+      timezoneInferenceAttemptedAt?: unknown;
     };
     if (!parsed || typeof parsed !== "object") {
       return null;
@@ -222,6 +226,14 @@ function parseWorkspaceOnboardingState(raw: string): WorkspaceOnboardingState | 
         typeof parsed.bootstrapSeededAt === "string" ? parsed.bootstrapSeededAt : undefined,
       onboardingCompletedAt:
         typeof parsed.onboardingCompletedAt === "string" ? parsed.onboardingCompletedAt : undefined,
+      languageInferenceAttemptedAt:
+        typeof parsed.languageInferenceAttemptedAt === "string"
+          ? parsed.languageInferenceAttemptedAt
+          : undefined,
+      timezoneInferenceAttemptedAt:
+        typeof parsed.timezoneInferenceAttemptedAt === "string"
+          ? parsed.timezoneInferenceAttemptedAt
+          : undefined,
     };
   } catch {
     return null;
@@ -247,7 +259,9 @@ async function readWorkspaceOnboardingState(statePath: string): Promise<Workspac
   }
 }
 
-async function readWorkspaceOnboardingStateForDir(dir: string): Promise<WorkspaceOnboardingState> {
+export async function readWorkspaceOnboardingStateForDir(
+  dir: string,
+): Promise<WorkspaceOnboardingState> {
   const statePath = resolveWorkspaceStatePath(resolveUserPath(dir));
   return await readWorkspaceOnboardingState(statePath);
 }
@@ -273,6 +287,20 @@ async function writeWorkspaceOnboardingState(
     await fs.unlink(tmpPath).catch(() => {});
     throw err;
   }
+}
+
+export async function writeWorkspaceOnboardingStateForDir(
+  dir: string,
+  state: WorkspaceOnboardingState,
+): Promise<void> {
+  const statePath = resolveWorkspaceStatePath(resolveUserPath(dir));
+  await writeWorkspaceOnboardingState(statePath, {
+    version: WORKSPACE_STATE_VERSION,
+    bootstrapSeededAt: state.bootstrapSeededAt,
+    onboardingCompletedAt: state.onboardingCompletedAt,
+    languageInferenceAttemptedAt: state.languageInferenceAttemptedAt,
+    timezoneInferenceAttemptedAt: state.timezoneInferenceAttemptedAt,
+  });
 }
 
 async function hasGitRepo(dir: string): Promise<boolean> {

@@ -7,6 +7,7 @@ import {
 } from "../agents/agent-scope.js";
 import { appendCronStyleCurrentTimeLine } from "../agents/current-time.js";
 import { resolveEffectiveMessagesConfig } from "../agents/identity.js";
+import { maybeInferMissingUserProfileFields } from "../agents/profile-inference.js";
 import { DEFAULT_HEARTBEAT_FILENAME } from "../agents/workspace.js";
 import { resolveHeartbeatReplyPayload } from "../auto-reply/heartbeat-reply-payload.js";
 import {
@@ -692,6 +693,20 @@ export async function runHeartbeatOnce(opts: {
     delivery.channel !== "none" && delivery.to && visibility.showAlerts,
   );
   const workspaceDir = resolveAgentWorkspaceDir(cfg, agentId);
+  try {
+    await maybeInferMissingUserProfileFields({
+      cfg,
+      agentId,
+      workspaceDir,
+      storePath,
+      nowMs: startedAt,
+    });
+  } catch (error) {
+    log.warn("heartbeat: profile inference sidecar failed", {
+      agentId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
   const { prompt, hasExecCompletion, hasCronEvents } = resolveHeartbeatRunPrompt({
     cfg,
     heartbeat,
