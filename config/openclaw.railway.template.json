@@ -7,9 +7,6 @@
       "compaction": {
         "mode": "safeguard"
       },
-      "heartbeat": {
-        "target": "last"
-      },
       "workspace": "${OPENCLAW_WORKSPACE_DIR}",
       "maxConcurrent": 4,
       "subagents": {

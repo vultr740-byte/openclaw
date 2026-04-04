@@ -1102,80 +1102,26 @@ describe("runHeartbeatOnce", () => {
     }
   });
 
-  it("injects authoritative user and heartbeat timing facts into heartbeat prompts", async () => {
-    const tmpDir = await createCaseDir("hb-timing-facts");
-    const storePath = path.join(tmpDir, "sessions.json");
-    const cfg: OpenClawConfig = {
-      agents: {
-        defaults: {
-          workspace: tmpDir,
-          heartbeat: { every: "5m", target: "whatsapp" },
-        },
-      },
-      channels: { whatsapp: { allowFrom: ["*"] } },
-      session: { store: storePath },
-    };
-    const sessionKey = resolveMainSessionKey(cfg);
-    const lastUserMessageAt = Date.parse("2026-01-18T03:00:00.000Z");
-    const lastHeartbeatSentAt = Date.parse("2026-01-18T04:00:00.000Z");
-    await fs.writeFile(
-      storePath,
-      JSON.stringify({
-        [sessionKey]: {
-          sessionId: "sid",
-          updatedAt: Date.parse("2026-01-18T04:30:00.000Z"),
-          lastUserMessageAt,
-          lastHeartbeatSentAt,
-          lastChannel: "whatsapp",
-          lastTo: "120363401234567890@g.us",
-        },
-      }),
-    );
-
-    const replySpy = vi.spyOn(replyModule, "getReplyFromConfig");
-    try {
-      replySpy.mockResolvedValue({ text: "Checked in" });
-      const sendWhatsApp = vi
-        .fn<NonNullable<HeartbeatDeps["sendWhatsApp"]>>()
-        .mockResolvedValue({ messageId: "m1", toJid: "jid" });
-
-      await runHeartbeatOnce({
-        cfg,
-        deps: createHeartbeatDeps(sendWhatsApp),
-      });
-
-      const calledCtx = replySpy.mock.calls[0]?.[0] as { Body?: string };
-      expect(calledCtx.Body).toContain("Heartbeat timing facts (authoritative):");
-      expect(calledCtx.Body).toContain("Last real user message time: 2026-01-18T03:00:00.000Z");
-      expect(calledCtx.Body).toContain(
-        "Last heartbeat message sent time: 2026-01-18T04:00:00.000Z",
-      );
-      expect(calledCtx.Body).toContain(
-        "Do not infer user inactivity from session updatedAt when a real user message time is available.",
-      );
-    } finally {
-      replySpy.mockRestore();
-    }
-  });
-
   it("applies HEARTBEAT.md gating rules across file states and triggers", async () => {
     const cases: Array<{
       name: string;
       fileState: HeartbeatFileState;
       reason?: "interval" | "wake";
       queueCronEvent?: boolean;
-      expectedStatus: "ran";
+      expectedStatus: "ran" | "skipped";
+      expectedSkipReason?: "empty-heartbeat-file";
       expectedSendCalls: number;
       expectedReplyCalls: number;
       expectCronContext?: boolean;
       replyText?: string;
     }> = [
       {
-        name: "empty file + interval runs",
+        name: "empty file + interval skips",
         fileState: "empty",
-        expectedStatus: "ran",
-        expectedSendCalls: 1,
-        expectedReplyCalls: 1,
+        expectedStatus: "skipped",
+        expectedSkipReason: "empty-heartbeat-file",
+        expectedSendCalls: 0,
+        expectedReplyCalls: 0,
       },
       {
         name: "empty file + wake runs",
@@ -1244,6 +1190,9 @@ describe("runHeartbeatOnce", () => {
       const { res, replySpy, sendWhatsApp } = await runHeartbeatFileScenario(testCase);
       try {
         expect(res.status, testCase.name).toBe(testCase.expectedStatus);
+        if (res.status === "skipped") {
+          expect(res.reason, testCase.name).toBe(testCase.expectedSkipReason);
+        }
         expect(replySpy, testCase.name).toHaveBeenCalledTimes(testCase.expectedReplyCalls);
         expect(sendWhatsApp, testCase.name).toHaveBeenCalledTimes(testCase.expectedSendCalls);
         if (testCase.expectCronContext) {
@@ -1254,24 +1203,6 @@ describe("runHeartbeatOnce", () => {
       } finally {
         replySpy.mockRestore();
       }
-    }
-  });
-
-  it("uses the default caring heartbeat prompt even when HEARTBEAT.md is empty", async () => {
-    const { res, replySpy, sendWhatsApp } = await runHeartbeatFileScenario({
-      fileState: "empty",
-      reason: "interval",
-    });
-    try {
-      expect(res.status).toBe("ran");
-      expect(replySpy).toHaveBeenCalledTimes(1);
-      expect(sendWhatsApp).toHaveBeenCalledTimes(1);
-      const calledCtx = replySpy.mock.calls[0]?.[0] as { Body?: string };
-      expect(calledCtx.Body).toContain(
-        "After 24 hours of user inactivity, send at most one brief re-engagement message to the user.",
-      );
-    } finally {
-      replySpy.mockRestore();
     }
   });
 

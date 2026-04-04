@@ -13,6 +13,7 @@ import { resolveHeartbeatReplyPayload } from "../auto-reply/heartbeat-reply-payl
 import {
   DEFAULT_HEARTBEAT_ACK_MAX_CHARS,
   DEFAULT_HEARTBEAT_EVERY,
+  isHeartbeatContentEffectivelyEmpty,
   resolveHeartbeatPrompt as resolveHeartbeatPromptText,
   stripHeartbeatToken,
 } from "../auto-reply/heartbeat.js";
@@ -41,7 +42,7 @@ import { CommandLane } from "../process/lanes.js";
 import { normalizeAgentId, toAgentStoreSessionKey } from "../routing/session-key.js";
 import { defaultRuntime, type RuntimeEnv } from "../runtime.js";
 import { escapeRegExp } from "../utils.js";
-import { formatErrorMessage } from "./errors.js";
+import { formatErrorMessage, hasErrnoCode } from "./errors.js";
 import { isWithinActiveHours } from "./heartbeat-active-hours.js";
 import {
   buildExecEventPrompt,
@@ -476,11 +477,14 @@ type HeartbeatReasonFlags = {
   isFollowupEventReason: boolean;
 };
 
+type HeartbeatSkipReason = "empty-heartbeat-file";
+
 type HeartbeatPreflight = HeartbeatReasonFlags & {
   session: ReturnType<typeof resolveHeartbeatSession>;
   pendingEventEntries: ReturnType<typeof peekSystemEventEntries>;
   hasTaggedCronEvents: boolean;
   shouldInspectPendingEvents: boolean;
+  skipReason?: HeartbeatSkipReason;
 };
 
 function resolveHeartbeatReasonFlags(reason?: string): HeartbeatReasonFlags {
@@ -515,13 +519,43 @@ async function resolveHeartbeatPreflight(params: {
   const shouldInspectPendingEvents =
     !reasonFlags.isFollowupEventReason &&
     (reasonFlags.isExecEventReason || reasonFlags.isCronEventReason || hasTaggedCronEvents);
+  const shouldBypassFileGates =
+    reasonFlags.isExecEventReason ||
+    reasonFlags.isCronEventReason ||
+    reasonFlags.isWakeReason ||
+    reasonFlags.isFollowupEventReason ||
+    hasTaggedCronEvents;
   const basePreflight = {
     ...reasonFlags,
     session,
     pendingEventEntries,
     hasTaggedCronEvents,
     shouldInspectPendingEvents,
-  } satisfies HeartbeatPreflight;
+  } satisfies Omit<HeartbeatPreflight, "skipReason">;
+
+  if (shouldBypassFileGates) {
+    return basePreflight;
+  }
+
+  const workspaceDir = resolveAgentWorkspaceDir(params.cfg, params.agentId);
+  const heartbeatFilePath = path.join(workspaceDir, DEFAULT_HEARTBEAT_FILENAME);
+  try {
+    const heartbeatFileContent = await fs.readFile(heartbeatFilePath, "utf-8");
+    if (isHeartbeatContentEffectivelyEmpty(heartbeatFileContent)) {
+      return {
+        ...basePreflight,
+        skipReason: "empty-heartbeat-file",
+      };
+    }
+  } catch (err: unknown) {
+    if (hasErrnoCode(err, "ENOENT")) {
+      // Missing HEARTBEAT.md is intentional in some setups (for example, when
+      // heartbeat instructions live outside the file), so keep the run active.
+      // The heartbeat prompt already says "if it exists".
+      return basePreflight;
+    }
+    // For other read errors, proceed with heartbeat as before.
+  }
 
   return basePreflight;
 }
@@ -531,15 +565,6 @@ type HeartbeatPromptResolution = {
   hasExecCompletion: boolean;
   hasCronEvents: boolean;
 };
-
-function formatHeartbeatFactTimestamp(
-  value: number | undefined,
-  opts: { missingLabel?: string } = {},
-): string {
-  return typeof value === "number" && Number.isFinite(value)
-    ? new Date(value).toISOString()
-    : (opts.missingLabel ?? "never");
-}
 
 function appendHeartbeatWorkspacePathHint(prompt: string, workspaceDir: string): string {
   if (!/heartbeat\.md/i.test(prompt)) {
@@ -553,44 +578,12 @@ function appendHeartbeatWorkspacePathHint(prompt: string, workspaceDir: string):
   return `${prompt}\n${hint}`;
 }
 
-function appendHeartbeatTimingFacts(
-  prompt: string,
-  entry:
-    | {
-        updatedAt?: number;
-        lastUserMessageAt?: number;
-        lastHeartbeatSentAt?: number;
-      }
-    | undefined,
-): string {
-  const facts = [
-    "Heartbeat timing facts (authoritative):",
-    `- Last real user message time: ${formatHeartbeatFactTimestamp(entry?.lastUserMessageAt, { missingLabel: "unknown" })}`,
-    `- Last heartbeat message sent time: ${formatHeartbeatFactTimestamp(entry?.lastHeartbeatSentAt)}`,
-  ];
-  if (typeof entry?.lastUserMessageAt !== "number" && typeof entry?.updatedAt === "number") {
-    facts.push(
-      `- Legacy session activity time: ${formatHeartbeatFactTimestamp(entry.updatedAt)} (may include internal activity; use only as a fallback when the real user message time is unavailable)`,
-    );
-  }
-  facts.push(
-    "Use these timing facts when deciding whether to proactively message the user. Do not infer user inactivity from session updatedAt when a real user message time is available.",
-  );
-  const block = facts.join("\n");
-  return prompt.includes(block) ? prompt : `${prompt}\n${block}`;
-}
-
 function resolveHeartbeatRunPrompt(params: {
   cfg: OpenClawConfig;
   heartbeat?: HeartbeatConfig;
   preflight: HeartbeatPreflight;
   canRelayToUser: boolean;
   workspaceDir: string;
-  entry?: {
-    updatedAt?: number;
-    lastUserMessageAt?: number;
-    lastHeartbeatSentAt?: number;
-  };
 }): HeartbeatPromptResolution {
   const pendingEventEntries = params.preflight.pendingEventEntries;
   const pendingEvents = params.preflight.shouldInspectPendingEvents
@@ -612,10 +605,7 @@ function resolveHeartbeatRunPrompt(params: {
     : hasCronEvents
       ? buildCronEventPrompt(cronEvents, { deliverToUser: params.canRelayToUser })
       : resolveHeartbeatPrompt(params.cfg, params.heartbeat);
-  const prompt = appendHeartbeatTimingFacts(
-    appendHeartbeatWorkspacePathHint(basePrompt, params.workspaceDir),
-    params.entry,
-  );
+  const prompt = appendHeartbeatWorkspacePathHint(basePrompt, params.workspaceDir);
 
   return { prompt, hasExecCompletion, hasCronEvents };
 }
@@ -651,7 +641,7 @@ export async function runHeartbeatOnce(opts: {
     return { status: "skipped", reason: "requests-in-flight" };
   }
 
-  // Preflight centralizes trigger classification and event inspection.
+  // Preflight centralizes trigger classification, event inspection, and HEARTBEAT.md gating.
   const preflight = await resolveHeartbeatPreflight({
     cfg,
     agentId,
@@ -659,6 +649,14 @@ export async function runHeartbeatOnce(opts: {
     forcedSessionKey: opts.sessionKey,
     reason: opts.reason,
   });
+  if (preflight.skipReason) {
+    emitHeartbeatEvent({
+      status: "skipped",
+      reason: preflight.skipReason,
+      durationMs: Date.now() - startedAt,
+    });
+    return { status: "skipped", reason: preflight.skipReason };
+  }
   const { entry, sessionKey, storePath } = preflight.session;
   const previousUpdatedAt = entry?.updatedAt;
   const delivery = resolveHeartbeatDeliveryTarget({ cfg, entry, heartbeat });
@@ -713,7 +711,6 @@ export async function runHeartbeatOnce(opts: {
     preflight,
     canRelayToUser,
     workspaceDir,
-    entry,
   });
   if (preflight.shouldInspectPendingEvents && !preflight.isFollowupEventReason) {
     // For event-style heartbeats, consume system events exactly once to avoid duplicate relays.

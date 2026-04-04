@@ -191,9 +191,8 @@ export async function initSessionState(params: {
   ctx: MsgContext;
   cfg: OpenClawConfig;
   commandAuthorized: boolean;
-  recordUserActivity?: boolean;
 }): Promise<SessionInitResult> {
-  const { ctx, cfg, commandAuthorized, recordUserActivity = true } = params;
+  const { ctx, cfg, commandAuthorized } = params;
   // Native slash commands (Telegram/Discord/Slack) are delivered on a separate
   // "slash session" key, but should mutate the target chat session.
   const targetSessionKey =
@@ -431,8 +430,7 @@ export async function initSessionState(params: {
   sessionEntry = {
     ...baseEntry,
     sessionId,
-    updatedAt: now,
-    ...(recordUserActivity ? { lastUserMessageAt: now } : {}),
+    updatedAt: Date.now(),
     systemSent,
     abortedLastRun,
     // Persist previously stored thinking/verbose levels when present.
