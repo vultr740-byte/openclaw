@@ -318,17 +318,58 @@ describe("docker-entrypoint channel bootstrap", () => {
     });
 
     expect(result.status, result.stderr || result.stdout).toBe(0);
-    expect(invocations).toEqual([
-      {
-        argv: ["channels", "bootstrap", "--channels", "weixin"],
-        env: {
-          DISCORD_BOT_TOKEN: null,
-          QQ_APP_ID: null,
-          QQ_APP_SECRET: null,
-          QQBOT_APP_ID: null,
-          QQBOT_CLIENT_SECRET: null,
-        },
+    expect(invocations).toEqual([]);
+  });
+});
+
+describe("docker-entrypoint weixin slim bootstrap", () => {
+  it("rewrites the generic railway template into a weixin-only slim config when bootstrapping weixin", () => {
+    const nextConfig = runEntrypointBootstrap({
+      env: {
+        OPENCLAW_BOOTSTRAP_CHANNEL: "weixin",
+        OPENCLAW_GATEWAY_TOKEN: "gateway-token",
+        RAILWAY_STATIC_URL: "openclaw-production-1691.up.railway.app",
       },
+      templateTelegram: {
+        enabled: true,
+        dmPolicy: "allowlist",
+        botToken: "${TELEGRAM_BOT_TOKEN}",
+        allowFrom: "__TELEGRAM_ALLOW_FROM__",
+      },
+    }) as {
+      browser?: { enabled?: boolean };
+      approvals?: { exec?: { enabled?: boolean } };
+      canvasHost?: { enabled?: boolean };
+      cron?: { enabled?: boolean };
+      acp?: { enabled?: boolean; dispatch?: { enabled?: boolean } };
+      channels?: Record<string, { enabled?: boolean; dmPolicy?: string; allowFrom?: unknown }>;
+      plugins?: {
+        enabled?: boolean;
+        allow?: unknown;
+        slots?: { memory?: string };
+        entries?: Record<string, { enabled?: boolean }>;
+      };
+      gateway?: { controlUi?: { allowedOrigins?: unknown } };
+    };
+
+    expect(nextConfig.browser?.enabled).toBe(false);
+    expect(nextConfig.approvals?.exec?.enabled).toBe(false);
+    expect(nextConfig.canvasHost?.enabled).toBe(false);
+    expect(nextConfig.cron?.enabled).toBe(false);
+    expect(nextConfig.acp?.enabled).toBe(false);
+    expect(nextConfig.acp?.dispatch?.enabled ?? false).toBe(false);
+    expect(nextConfig.channels?.telegram?.enabled).toBe(false);
+    expect(nextConfig.channels?.["openclaw-weixin"]).toEqual({
+      enabled: true,
+    });
+    expect(nextConfig.plugins?.enabled).toBe(true);
+    expect(nextConfig.plugins?.allow).toEqual(["openclaw-weixin"]);
+    expect(nextConfig.plugins?.slots?.memory).toBe("none");
+    expect(nextConfig.plugins?.entries?.telegram?.enabled).toBe(false);
+    expect(nextConfig.plugins?.entries?.acpx?.enabled).toBe(false);
+    expect(nextConfig.plugins?.entries?.["openclaw-weixin"]?.enabled).toBe(true);
+    expect(nextConfig.gateway?.controlUi?.allowedOrigins).toEqual([
+      "https://openclaw-production-1691.up.railway.app",
     ]);
   });
 });

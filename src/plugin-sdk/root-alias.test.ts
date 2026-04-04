@@ -22,6 +22,8 @@ type EmptySchema = {
 function loadRootAliasWithStubs(options?: {
   distExists?: boolean;
   monolithicExports?: Record<string | symbol, unknown>;
+  extraFiles?: Record<string, string>;
+  moduleExportsByPath?: Record<string, Record<string | symbol, unknown>>;
 }) {
   let createJitiCalls = 0;
   let jitiLoadCalls = 0;
@@ -47,7 +49,13 @@ function loadRootAliasWithStubs(options?: {
     }
     if (id === "node:fs") {
       return {
-        existsSync: () => options?.distExists ?? false,
+        existsSync: (candidate: string) => {
+          const normalized = candidate.replace(/\\/g, "/");
+          if (options?.extraFiles && normalized in options.extraFiles) {
+            return true;
+          }
+          return options?.distExists ?? false;
+        },
       };
     }
     if (id === "jiti") {
@@ -57,6 +65,13 @@ function loadRootAliasWithStubs(options?: {
           return (specifier: string) => {
             jitiLoadCalls += 1;
             loadedSpecifiers.push(specifier);
+            const normalized = specifier.replace(/\\/g, "/");
+            const moduleExports =
+              options?.moduleExportsByPath?.[normalized] ??
+              options?.moduleExportsByPath?.[path.basename(normalized)];
+            if (moduleExports) {
+              return moduleExports;
+            }
             return monolithicExports;
           };
         },
@@ -102,6 +117,62 @@ describe("plugin-sdk root alias", () => {
     expect(factory?.().safeParse({})).toEqual({ success: true, data: {} });
     expect(lazyModule.createJitiCalls).toBe(0);
     expect(lazyModule.jitiLoadCalls).toBe(0);
+  });
+
+  it("resolves compatibility helpers through light modules before the monolithic sdk", () => {
+    const lazyModule = loadRootAliasWithStubs({
+      extraFiles: {
+        [path
+          .resolve(path.dirname(rootAliasPath), "..", "..", "dist", "plugin-sdk", "account-id.js")
+          .replace(/\\/g, "/")]: "present",
+        [path
+          .resolve(
+            path.dirname(rootAliasPath),
+            "..",
+            "..",
+            "src",
+            "channels",
+            "plugins",
+            "config-schema.ts",
+          )
+          .replace(/\\/g, "/")]: "present",
+      },
+      moduleExportsByPath: {
+        "account-id.js": {
+          DEFAULT_ACCOUNT_ID: "default",
+          normalizeAccountId: (value: string | undefined | null) =>
+            (value ?? "").trim().toLowerCase() || "default",
+        },
+        "config-schema.ts": {
+          buildChannelConfigSchema: () => ({ schema: { type: "object" } }),
+        },
+      },
+      monolithicExports: {
+        buildChannelConfigSchema: () => {
+          throw new Error("should not load monolithic buildChannelConfigSchema");
+        },
+        normalizeAccountId: () => {
+          throw new Error("should not load monolithic normalizeAccountId");
+        },
+      },
+    });
+    const lazyRootSdk = lazyModule.moduleExports;
+
+    expect(lazyModule.createJitiCalls).toBe(0);
+    expect((lazyRootSdk.normalizeAccountId as (value: string) => string)(" Foo ")).toBe("foo");
+    expect(lazyRootSdk.DEFAULT_ACCOUNT_ID as string).toBe("default");
+    const configSchema = lazyRootSdk.buildChannelConfigSchema as
+      | (() => { schema: { type: string } })
+      | undefined;
+    expect(configSchema?.().schema.type).toBe("object");
+    expect(lazyModule.createJitiCalls).toBe(1);
+    expect(lazyModule.jitiLoadCalls).toBe(2);
+    expect(lazyModule.loadedSpecifiers.every((specifier) => !specifier.endsWith("index.ts"))).toBe(
+      true,
+    );
+    expect(lazyModule.loadedSpecifiers.every((specifier) => !specifier.endsWith("index.js"))).toBe(
+      true,
+    );
   });
 
   it("loads legacy root exports on demand and preserves reflection", () => {

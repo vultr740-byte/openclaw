@@ -70,4 +70,40 @@ describe("plugin runtime command execution", () => {
     // Wrappers should NOT be the same reference as the raw functions
     expect(runtime.modelAuth.getApiKeyForModel).not.toBe(rawGetApiKey);
   });
+
+  it("keeps channel routing helpers synchronous for plugin compatibility", () => {
+    const runtime = createPluginRuntime();
+    const route = runtime.channel.routing.resolveAgentRoute({
+      cfg: {},
+      channel: "openclaw-weixin",
+      accountId: "acct-1",
+      peer: { kind: "direct", id: "user-1" },
+    });
+    expect(route).not.toBeInstanceOf(Promise);
+    expect(route).toMatchObject({
+      agentId: "main",
+      accountId: "acct-1",
+      sessionKey: "agent:main:main",
+      mainSessionKey: "agent:main:main",
+      matchedBy: "default",
+    });
+  });
+
+  it("keeps channel inbound context finalization synchronous for plugin compatibility", () => {
+    const runtime = createPluginRuntime();
+    const finalized = runtime.channel.reply.finalizeInboundContext({
+      Body: "hello",
+      From: "user-1",
+      To: "user-1",
+      ChatType: "direct",
+    });
+    expect(finalized).not.toBeInstanceOf(Promise);
+    expect(finalized).toMatchObject({
+      Body: "hello",
+      BodyForAgent: "hello",
+      BodyForCommands: "hello",
+      CommandAuthorized: false,
+      ChatType: "direct",
+    });
+  });
 });

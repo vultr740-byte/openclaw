@@ -84,6 +84,26 @@ resolve_bootstrap_channels() {
   printf '%s' "${OPENCLAW_BOOTSTRAP_CHANNEL:-}"
 }
 
+has_weixin_bootstrap_channel() {
+  local channels
+  channels="$(resolve_bootstrap_channels)"
+  if [ -z "$channels" ]; then
+    return 1
+  fi
+
+  local channel
+  IFS=',' read -r -a _bootstrap_channel_list <<<"$channels"
+  for channel in "${_bootstrap_channel_list[@]}"; do
+    channel="${channel//[[:space:]]/}"
+    case "$channel" in
+      weixin)
+        return 0
+        ;;
+    esac
+  done
+  return 1
+}
+
 should_inject_bind=false
 has_bind=false
 for arg in "$@"; do
@@ -137,6 +157,9 @@ bootstrap_channels() {
   if [ -z "$channels" ]; then
     return 0
   fi
+  if has_weixin_bootstrap_channel; then
+    return 0
+  fi
   run_as_runtime_user openclaw channels bootstrap --channels "$channels"
 }
 
@@ -186,6 +209,10 @@ const rawSessionDmScope = process.env.OPENCLAW_SESSION_DM_SCOPE?.trim() || "";
 const rawXaiBaseUrl = process.env.XAI_BASE_URL?.trim() || "";
 const rawXaiApiKey = process.env.XAI_API_KEY?.trim() || "";
 const rawXaiModel = process.env.XAI_MODEL?.trim() || "";
+const rawBootstrapChannels =
+  process.env.OPENCLAW_BOOTSTRAP_CHANNELS?.trim() ||
+  process.env.OPENCLAW_BOOTSTRAP_CHANNEL?.trim() ||
+  "";
 const xaiConfigured = Boolean(rawXaiBaseUrl && rawXaiApiKey && rawXaiModel);
 
 let allowFrom = [];
@@ -262,6 +289,16 @@ function normalizeAllowFromEntries(value) {
   return value.map((entry) => String(entry).trim()).filter(Boolean);
 }
 
+function normalizeBootstrapChannelList(value) {
+  if (!value) {
+    return [];
+  }
+  return String(value)
+    .split(",")
+    .map((entry) => entry.trim().toLowerCase())
+    .filter(Boolean);
+}
+
 function hasConfiguredTelegramToken(channelConfig) {
   if (!channelConfig || typeof channelConfig !== "object" || Array.isArray(channelConfig)) {
     return false;
@@ -288,6 +325,10 @@ function hasConfiguredTelegramToken(channelConfig) {
         normalizeConfiguredString(account.tokenFile)),
   );
 }
+
+const bootstrapChannelList = normalizeBootstrapChannelList(rawBootstrapChannels);
+const bootstrapWeixinOnly =
+  bootstrapChannelList.length === 1 && bootstrapChannelList[0] === "weixin";
 
 let controlUiAllowedOrigins = null;
 let shouldMergeDerivedControlUiAllowedOrigins = false;
@@ -380,6 +421,38 @@ try {
       !Array.isArray(nextChannels.telegram)
         ? nextChannels.telegram
         : null;
+    const nextPlugins =
+      root.plugins && typeof root.plugins === "object" && !Array.isArray(root.plugins)
+        ? root.plugins
+        : {};
+    const nextPluginEntries =
+      nextPlugins.entries &&
+      typeof nextPlugins.entries === "object" &&
+      !Array.isArray(nextPlugins.entries)
+        ? nextPlugins.entries
+        : {};
+    const nextCanvasHost =
+      root.canvasHost && typeof root.canvasHost === "object" && !Array.isArray(root.canvasHost)
+        ? root.canvasHost
+        : {};
+    const nextCron =
+      root.cron && typeof root.cron === "object" && !Array.isArray(root.cron) ? root.cron : {};
+    const nextApprovals =
+      root.approvals && typeof root.approvals === "object" && !Array.isArray(root.approvals)
+        ? root.approvals
+        : {};
+    const nextApprovalsExec =
+      nextApprovals.exec &&
+      typeof nextApprovals.exec === "object" &&
+      !Array.isArray(nextApprovals.exec)
+        ? nextApprovals.exec
+        : {};
+    const nextBrowser =
+      root.browser && typeof root.browser === "object" && !Array.isArray(root.browser)
+        ? root.browser
+        : {};
+    const nextAcp =
+      root.acp && typeof root.acp === "object" && !Array.isArray(root.acp) ? root.acp : {};
 
     if (controlUiAllowedOrigins !== null) {
       if (shouldMergeDerivedControlUiAllowedOrigins) {
@@ -411,6 +484,82 @@ try {
 
       nextChannels.telegram = nextTelegram;
       root.channels = nextChannels;
+    }
+
+    if (bootstrapWeixinOnly) {
+      nextBrowser.enabled = false;
+      root.browser = nextBrowser;
+
+      nextApprovalsExec.enabled = false;
+      nextApprovals.exec = nextApprovalsExec;
+      root.approvals = nextApprovals;
+
+      nextCanvasHost.enabled = false;
+      root.canvasHost = nextCanvasHost;
+
+      nextCron.enabled = false;
+      root.cron = nextCron;
+
+      nextAcp.enabled = false;
+      if (
+        nextAcp.dispatch &&
+        typeof nextAcp.dispatch === "object" &&
+        !Array.isArray(nextAcp.dispatch)
+      ) {
+        nextAcp.dispatch.enabled = false;
+      }
+      root.acp = nextAcp;
+
+      if (nextChannels.telegram && typeof nextChannels.telegram === "object") {
+        nextChannels.telegram = {
+          ...nextChannels.telegram,
+          enabled: false,
+        };
+      }
+      nextChannels["openclaw-weixin"] = {
+        ...(nextChannels["openclaw-weixin"] &&
+        typeof nextChannels["openclaw-weixin"] === "object" &&
+        !Array.isArray(nextChannels["openclaw-weixin"])
+          ? nextChannels["openclaw-weixin"]
+          : {}),
+        enabled: true,
+      };
+      root.channels = nextChannels;
+
+      nextPlugins.enabled = true;
+      nextPlugins.allow = ["openclaw-weixin"];
+      nextPlugins.slots = {
+        ...(nextPlugins.slots && typeof nextPlugins.slots === "object" && !Array.isArray(nextPlugins.slots)
+          ? nextPlugins.slots
+          : {}),
+        memory: "none",
+      };
+      nextPluginEntries.telegram = {
+        ...(nextPluginEntries.telegram &&
+        typeof nextPluginEntries.telegram === "object" &&
+        !Array.isArray(nextPluginEntries.telegram)
+          ? nextPluginEntries.telegram
+          : {}),
+        enabled: false,
+      };
+      nextPluginEntries.acpx = {
+        ...(nextPluginEntries.acpx &&
+        typeof nextPluginEntries.acpx === "object" &&
+        !Array.isArray(nextPluginEntries.acpx)
+          ? nextPluginEntries.acpx
+          : {}),
+        enabled: false,
+      };
+      nextPluginEntries["openclaw-weixin"] = {
+        ...(nextPluginEntries["openclaw-weixin"] &&
+        typeof nextPluginEntries["openclaw-weixin"] === "object" &&
+        !Array.isArray(nextPluginEntries["openclaw-weixin"])
+          ? nextPluginEntries["openclaw-weixin"]
+          : {}),
+        enabled: true,
+      };
+      nextPlugins.entries = nextPluginEntries;
+      root.plugins = nextPlugins;
     }
 
     if (!xaiConfigured) {
