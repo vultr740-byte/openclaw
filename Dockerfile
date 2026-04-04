@@ -42,18 +42,6 @@ USER node
 # Docker builds on small VMs may otherwise fail with "Killed" (exit 137).
 RUN NODE_OPTIONS=--max-old-space-size=2048 pnpm install --frozen-lockfile
 
-# Prebundle the published Weixin channel so bootstrap can skip runtime npm
-# installs and start login flows immediately in image-first deployments.
-ARG OPENCLAW_PREBUNDLED_WEIXIN_SPEC="@tencent-weixin/openclaw-weixin@1.0.3"
-RUN set -eux; \
-    plugin_dir="/app/extensions/openclaw-weixin"; \
-    tmpdir="$(mktemp -d)"; \
-    tarball_url="$(npm view "$OPENCLAW_PREBUNDLED_WEIXIN_SPEC" dist.tarball)"; \
-    mkdir -p "$plugin_dir"; \
-    curl -fsSL "$tarball_url" -o "$tmpdir/weixin.tgz"; \
-    tar -xzf "$tmpdir/weixin.tgz" -C "$plugin_dir" --strip-components=1; \
-    rm -rf "$tmpdir"
-
 # Optionally install Chromium and Xvfb for browser automation.
 # Build with: docker build --build-arg OPENCLAW_INSTALL_BROWSER=1 ...
 # Adds ~300MB but eliminates the 60-90s Playwright install on every container start.
@@ -105,6 +93,8 @@ RUN if [ -n "$OPENCLAW_INSTALL_DOCKER_CLI" ]; then \
 
 USER node
 COPY --chown=node:node . .
+RUN mkdir -p /app/extensions/openclaw-weixin \
+ && cp -R /app/vendor/openclaw-weixin/. /app/extensions/openclaw-weixin/
 # Normalize copied plugin/agent paths so plugin safety checks do not reject
 # world-writable directories inherited from source file modes.
 RUN for dir in /app/extensions /app/.agent /app/.agents; do \
