@@ -27,20 +27,29 @@ export {
 const log = createSubsystemLogger("errors");
 
 const BILLING_RECHARGE_BASE_URL = "https://www.xialiao.app/recharge/";
+const BILLING_RECHARGE_TARGET_ENV = "OPENCLAW_RECHARGE_TARGET";
 
 export const BILLING_ERROR_USER_MESSAGE =
   "⚠️ Model balance is insufficient. Please top up and try again.";
 
-function encodeBillingAccountIdForPath(accountId: string): string {
-  return encodeURIComponent(accountId).replace(/%3A/gi, ":");
+function encodeBillingRechargeTargetForPath(target: string): string {
+  return encodeURIComponent(target).replace(/%3A/gi, ":");
+}
+
+function resolveBillingRechargeTarget(env: NodeJS.ProcessEnv): string | null {
+  const explicitTarget = env[BILLING_RECHARGE_TARGET_ENV]?.trim();
+  if (explicitTarget) {
+    return explicitTarget;
+  }
+  return null;
 }
 
 export function resolveBillingRechargeUrl(env: NodeJS.ProcessEnv = process.env): string | null {
-  const accountId = env.OPENCLAW_ACCOUNT_ID?.trim();
-  if (!accountId) {
+  const rechargeTarget = resolveBillingRechargeTarget(env);
+  if (!rechargeTarget) {
     return null;
   }
-  return `${BILLING_RECHARGE_BASE_URL}${encodeBillingAccountIdForPath(accountId)}`;
+  return `${BILLING_RECHARGE_BASE_URL}${encodeBillingRechargeTargetForPath(rechargeTarget)}`;
 }
 
 export function formatBillingErrorMessage(provider?: string, model?: string): string {

@@ -119,21 +119,22 @@ describe("formatAssistantErrorText", () => {
     expect(result).toContain("Model balance is insufficient");
     expect(result).toBe(BILLING_ERROR_USER_MESSAGE);
   });
-  it("keeps billing copy generic even when OPENCLAW_ACCOUNT_ID is configured", () => {
+  it("keeps billing copy generic even when OPENCLAW_RECHARGE_TARGET is configured", () => {
     const msg = makeAssistantError("insufficient credits");
-    const result = withEnv({ OPENCLAW_ACCOUNT_ID: "weixin_cf69eddb0947fd8e" }, () =>
+    const result = withEnv({ OPENCLAW_RECHARGE_TARGET: "weixin_cf69eddb0947fd8e" }, () =>
       formatAssistantErrorText(msg),
     );
     expect(result).toBe(BILLING_ERROR_USER_MESSAGE);
   });
   it("preserves colon separators when building the recharge link", () => {
-    const result = withEnv({ OPENCLAW_ACCOUNT_ID: "webclaw:claw:weixin:74339e895533e12f" }, () =>
-      resolveBillingRechargeUrl(),
+    const result = withEnv(
+      { OPENCLAW_RECHARGE_TARGET: "webclaw:claw:weixin:74339e895533e12f" },
+      () => resolveBillingRechargeUrl(),
     );
     expect(result).toBe("https://www.xialiao.app/recharge/webclaw:claw:weixin:74339e895533e12f");
   });
   it("still encodes path-breaking characters in the recharge link", () => {
-    const result = withEnv({ OPENCLAW_ACCOUNT_ID: "weixin account/with spaces" }, () =>
+    const result = withEnv({ OPENCLAW_RECHARGE_TARGET: "weixin account/with spaces" }, () =>
       resolveBillingRechargeUrl(),
     );
     expect(result).toBe("https://www.xialiao.app/recharge/weixin%20account%2Fwith%20spaces");
