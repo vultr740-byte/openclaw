@@ -70,9 +70,9 @@ describe("sanitizeUserFacingText", () => {
     );
   });
 
-  it("keeps sanitized billing errors generic when OPENCLAW_ACCOUNT_ID is set", () => {
+  it("keeps sanitized billing errors generic when OPENCLAW_RECHARGE_TARGET is set", () => {
     const text = "billing: please upgrade your plan";
-    const result = withEnv({ OPENCLAW_ACCOUNT_ID: "weixin_cf69eddb0947fd8e" }, () =>
+    const result = withEnv({ OPENCLAW_RECHARGE_TARGET: "weixin_cf69eddb0947fd8e" }, () =>
       sanitizeUserFacingText(text, { errorContext: true }),
     );
     expect(result).toBe("⚠️ Model balance is insufficient. Please top up and try again.");

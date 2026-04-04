@@ -105,13 +105,15 @@ describe("buildEmbeddedRunPayloads", () => {
   });
 
   it("sends the recharge URL as a separate payload for billing errors", () => {
-    const payloads = withEnv({ OPENCLAW_ACCOUNT_ID: "webclaw:claw:weixin:74339e895533e12f" }, () =>
-      buildPayloads({
-        lastAssistant: makeAssistant({
-          errorMessage: "insufficient credits",
-          content: [{ type: "text", text: "insufficient credits" }],
+    const payloads = withEnv(
+      { OPENCLAW_RECHARGE_TARGET: "webclaw:claw:weixin:74339e895533e12f" },
+      () =>
+        buildPayloads({
+          lastAssistant: makeAssistant({
+            errorMessage: "insufficient credits",
+            content: [{ type: "text", text: "insufficient credits" }],
+          }),
         }),
-      }),
     );
 
     expect(payloads).toHaveLength(2);
