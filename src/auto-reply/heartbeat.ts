@@ -4,12 +4,13 @@ import { HEARTBEAT_TOKEN } from "./tokens.js";
 // Default heartbeat prompt (used when config.agents.defaults.heartbeat.prompt is unset).
 // Keep it tight and avoid encouraging the model to invent/rehash "open loops" from prior chat context.
 export const HEARTBEAT_PROMPT =
-  "Read HEARTBEAT.md if it exists (workspace context). Follow it strictly. Do not infer or repeat old tasks from prior chats. After 24 hours of user inactivity, send at most one brief re-engagement message to the user. Prefer continuing a recent context when one is obvious. Otherwise, send a short, practical reminder of something you can help with right now. Match the user's recent language and tone. Keep it concise, natural, specific, and low-pressure. Prefer sending at a time that fits the user's likely local time and activity pattern, and avoid likely sleep hours when that can be inferred. Do not send generic greetings, emotional check-ins, marketing copy, repetitive reminders, or invented urgency. If you have already sent a heartbeat message in the last 24 hours, reply HEARTBEAT_OK.";
+  "Read HEARTBEAT.md if it exists (workspace context). Follow it strictly. Do not infer or repeat old tasks from prior chats. If nothing needs attention, reply HEARTBEAT_OK.";
 export const DEFAULT_HEARTBEAT_EVERY = "30m";
 export const DEFAULT_HEARTBEAT_ACK_MAX_CHARS = 300;
 
 /**
  * Check if HEARTBEAT.md content is "effectively empty" - meaning it has no actionable tasks.
+ * This allows skipping heartbeat API calls when no tasks are configured.
  *
  * A file is considered effectively empty if it contains only:
  * - Whitespace
