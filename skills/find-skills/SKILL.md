@@ -5,129 +5,81 @@ description: Helps users discover and install agent skills when they ask questio
 
 # Find Skills
 
-This skill helps you discover and install skills from the open agent skills ecosystem.
+This skill helps you discover and install skills from the OpenClaw skill ecosystem.
 
 ## When to Use This Skill
 
 Use this skill when the user:
 
-- Asks "how do I do X" where X might be a common task with an existing skill
+- Asks "how do I do X" where X might already exist as a reusable skill
 - Says "find a skill for X" or "is there a skill for X"
-- Asks "can you do X" where X is a specialized capability
-- Expresses interest in extending agent capabilities
-- Wants to search for tools, templates, or workflows
-- Mentions they wish they had help with a specific domain (design, testing, deployment, etc.)
+- Asks for a specialized capability that is likely packaged as a skill
+- Wants to extend the current agent instead of solving the task ad hoc
 
-## What is the Skills CLI?
+## Default Workflow
 
-The Skills CLI (`npx skills`) is the package manager for the open agent skills ecosystem. Skills are modular packages that extend agent capabilities with specialized knowledge, workflows, and tools.
+OpenClaw has a native `skillhub` tool for remote skill discovery and install.
 
-**Key commands:**
+Use it first:
 
-- `npx skills find [query]` - Search for skills interactively or by keyword
-- `npx skills add <package>` - Install a skill from GitHub or other sources
-- `npx skills check` - Check for skill updates
-- `npx skills update` - Update all installed skills
+1. Search with `skillhub` using `action="search"` and a focused query.
+2. Present the best matches with a short explanation of what each skill does.
+3. If the user wants one installed, use `skillhub` with `action="install"` and the chosen `slug`.
 
-**Browse skills at:** https://skills.sh/
+Only fall back to the legacy `clawhub` skill/CLI when:
 
-## How to Help Users Find Skills
+- the native `skillhub` tool is unavailable or disabled
+- the remote registry has no relevant result
+- the user explicitly asks for `clawhub`
 
-### Step 1: Understand What They Need
+## Search Guidance
 
-When a user asks for help with something, identify:
+When searching, identify:
 
-1. The domain (e.g., React, testing, design, deployment)
-2. The specific task (e.g., writing tests, creating animations, reviewing PRs)
-3. Whether this is a common enough task that a skill likely exists
+1. The domain: React, testing, deployment, docs, design, automation, etc.
+2. The concrete task: review PRs, schedule reminders, post to Xiaohongshu, fetch GitHub data, etc.
+3. The best search terms: short, capability-oriented phrases work better than full sentences.
 
-### Step 2: Search for Skills
+Examples:
 
-Run the find command with a relevant query:
+- "make my React app faster" -> search for `react performance`
+- "help with PR reviews" -> search for `pr review`
+- "I need changelog automation" -> search for `changelog`
 
-```bash
-npx skills find [query]
-```
+## How to Present Results
 
-For example:
+When you find matching skills, tell the user:
 
-- User asks "how do I make my React app faster?" → `npx skills find react performance`
-- User asks "can you help me with PR reviews?" → `npx skills find pr review`
-- User asks "I need to create a changelog" → `npx skills find changelog`
+1. The skill name
+2. The slug
+3. What problem it solves
+4. Whether you can install it now
 
-The command will return results like:
-
-```
-Install with npx skills add <owner/repo@skill>
-
-vercel-labs/agent-skills@vercel-react-best-practices
-└ https://skills.sh/vercel-labs/agent-skills/vercel-react-best-practices
-```
-
-### Step 3: Present Options to the User
-
-When you find relevant skills, present them to the user with:
-
-1. The skill name and what it does
-2. The install command they can run
-3. A link to learn more at skills.sh
-
-Example response:
-
-```
-I found a skill that might help! The "vercel-react-best-practices" skill provides
-React and Next.js performance optimization guidelines from Vercel Engineering.
-
-To install it:
-npx skills add vercel-labs/agent-skills@vercel-react-best-practices
-
-Learn more: https://skills.sh/vercel-labs/agent-skills/vercel-react-best-practices
-```
-
-### Step 4: Offer to Install
-
-If the user wants to proceed, you can install the skill for them:
-
-```bash
-npx skills add <owner/repo@skill> -g -y
-```
-
-The `-g` flag installs globally (user-level) and `-y` skips confirmation prompts.
-
-## Common Skill Categories
-
-When searching, consider these common categories:
-
-| Category        | Example Queries                          |
-| --------------- | ---------------------------------------- |
-| Web Development | react, nextjs, typescript, css, tailwind |
-| Testing         | testing, jest, playwright, e2e           |
-| DevOps          | deploy, docker, kubernetes, ci-cd        |
-| Documentation   | docs, readme, changelog, api-docs        |
-| Code Quality    | review, lint, refactor, best-practices   |
-| Design          | ui, ux, design-system, accessibility     |
-| Productivity    | workflow, automation, git                |
-
-## Tips for Effective Searches
-
-1. **Use specific keywords**: "react testing" is better than just "testing"
-2. **Try alternative terms**: If "deploy" doesn't work, try "deployment" or "ci-cd"
-3. **Check popular sources**: Many skills come from `vercel-labs/agent-skills` or `ComposioHQ/awesome-claude-skills`
-
-## When No Skills Are Found
-
-If no relevant skills exist:
-
-1. Acknowledge that no existing skill was found
-2. Offer to help with the task directly using your general capabilities
-3. Suggest the user could create their own skill with `npx skills init`
+Keep the response short and decision-oriented.
 
 Example:
 
-```
-I searched for skills related to "xyz" but didn't find any matches.
-I can still help you with this task directly! Would you like me to proceed?
+```text
+I found a likely match:
 
-If this is something you do often, you could create your own skill:
-npx skills init my-xyz-skill
+- Calendar (`calendar`): calendar management and scheduling
+
+If you want, I can install `calendar` into the current workspace now.
 ```
+
+## Installation Guidance
+
+If the user approves installation, use the native `skillhub` tool with the selected slug.
+
+After install:
+
+- Tell the user the skill was added to the workspace skills directory
+- Note that it is now available as a normal OpenClaw skill
+
+## If Nothing Matches
+
+If search returns nothing useful:
+
+1. Say no good skill match was found
+2. Offer to handle the task directly
+3. Optionally mention the legacy `clawhub` path only if that fallback is actually needed

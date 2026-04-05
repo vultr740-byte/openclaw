@@ -8,4 +8,10 @@ describe("createOpenClawTools skills_search registration", () => {
     expect(tool).toBeDefined();
     expect(tool?.description).toContain("Search available local skills");
   });
+
+  it("registers skillhub by default", () => {
+    const tool = createOpenClawTools().find((candidate) => candidate.name === "skillhub");
+    expect(tool).toBeDefined();
+    expect(tool?.description).toContain("Search and install remote skills");
+  });
 });

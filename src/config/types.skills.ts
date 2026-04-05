@@ -39,9 +39,27 @@ export type SkillsLimitsConfig = {
   maxSkillFileBytes?: number;
 };
 
+export type SkillsHubConfig = {
+  /** Enable the native remote SkillHub integration. */
+  enabled?: boolean;
+  /** Search endpoint returning SkillHub search results. */
+  searchUrl?: string;
+  /** Deprecated alias kept for backwards compatibility with earlier native SkillHub config. */
+  indexUrl?: string;
+  /** Detail endpoint template returning skill metadata for a slug. */
+  detailUrlTemplate?: string;
+  /** Primary download URL template, for example `https://host/download?slug={slug}`. */
+  primaryDownloadUrlTemplate?: string;
+  /** Fallback download URL template, for example `https://cdn/skills/{slug}/{version}.zip`. */
+  downloadUrlTemplate?: string;
+  /** Timeout in milliseconds for SkillHub HTTP requests. */
+  timeoutMs?: number;
+};
+
 export type SkillsConfig = {
   /** Optional bundled-skill allowlist (only affects bundled skills). */
   allowBundled?: string[];
+  hub?: SkillsHubConfig;
   load?: SkillsLoadConfig;
   install?: SkillsInstallConfig;
   limits?: SkillsLimitsConfig;

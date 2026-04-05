@@ -206,6 +206,16 @@ describe("buildAgentSystemPrompt", () => {
     expect(prompt).toContain("Do not invent commands");
   });
 
+  it("mentions built-in skillhub before the legacy ClawHub fallback", () => {
+    const prompt = buildAgentSystemPrompt({
+      workspaceDir: "/tmp/openclaw",
+      docsPath: "/tmp/openclaw/docs",
+    });
+
+    expect(prompt).toContain("use the built-in skillhub tool first");
+    expect(prompt).toContain("ClawHub remains a legacy fallback");
+  });
+
   it("guides runtime completion events without exposing internal metadata", () => {
     const prompt = buildAgentSystemPrompt({
       workspaceDir: "/tmp/openclaw",

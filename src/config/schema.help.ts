@@ -610,6 +610,20 @@ export const FIELD_HELP: Record<string, string> = {
     "Prefer Homebrew installers when a skill offers multiple install methods and brew is available on the host.",
   "skills.install.nodeManager":
     'Node package manager used for skill node installers ("npm", "pnpm", "yarn", "bun").',
+  "skills.hub.enabled":
+    "Enable the built-in remote SkillHub integration used by the native skillhub tool and skill discovery guidance.",
+  "skills.hub.searchUrl":
+    "HTTP endpoint for SkillHub search queries. Expected to return JSON search results for a free-text query.",
+  "skills.hub.indexUrl":
+    "Deprecated alias for the SkillHub detail URL template. Kept for compatibility with earlier native SkillHub configs; prefer skills.hub.detailUrlTemplate.",
+  "skills.hub.detailUrlTemplate":
+    "SkillHub detail URL template for a single skill, for example `https://host/api/v1/skills/{slug}`.",
+  "skills.hub.primaryDownloadUrlTemplate":
+    'Primary SkillHub download URL template. Use "{slug}" and optionally "{version}" placeholders.',
+  "skills.hub.downloadUrlTemplate":
+    'Fallback SkillHub download URL template. Use "{slug}" and "{version}" placeholders for CDN-style archives.',
+  "skills.hub.timeoutMs":
+    "Timeout in milliseconds for native SkillHub network requests. Increase only if your registry is slow or remote.",
   "skills.load.watch":
     "Enable filesystem watching for skill-definition changes so updates can be applied without full process restart. Keep enabled in development workflows and disable in immutable production images.",
   "skills.load.watchDebounceMs":
