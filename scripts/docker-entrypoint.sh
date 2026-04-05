@@ -435,8 +435,6 @@ try {
       root.canvasHost && typeof root.canvasHost === "object" && !Array.isArray(root.canvasHost)
         ? root.canvasHost
         : {};
-    const nextCron =
-      root.cron && typeof root.cron === "object" && !Array.isArray(root.cron) ? root.cron : {};
     const nextApprovals =
       root.approvals && typeof root.approvals === "object" && !Array.isArray(root.approvals)
         ? root.approvals
@@ -496,9 +494,6 @@ try {
 
       nextCanvasHost.enabled = false;
       root.canvasHost = nextCanvasHost;
-
-      nextCron.enabled = false;
-      root.cron = nextCron;
 
       nextAcp.enabled = false;
       if (

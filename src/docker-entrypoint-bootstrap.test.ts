@@ -49,6 +49,9 @@ function runEntrypointBootstrap(params: {
         allowedOrigins: params.templateAllowedOrigins ?? [],
       },
     },
+    cron: {
+      enabled: true,
+    },
     channels: {
       telegram: {
         enabled: true,
@@ -355,7 +358,7 @@ describe("docker-entrypoint weixin slim bootstrap", () => {
     expect(nextConfig.browser?.enabled).toBe(false);
     expect(nextConfig.approvals?.exec?.enabled).toBe(false);
     expect(nextConfig.canvasHost?.enabled).toBe(false);
-    expect(nextConfig.cron?.enabled).toBe(false);
+    expect(nextConfig.cron?.enabled).toBe(true);
     expect(nextConfig.acp?.enabled).toBe(false);
     expect(nextConfig.acp?.dispatch?.enabled ?? false).toBe(false);
     expect(nextConfig.channels?.telegram?.enabled).toBe(false);
