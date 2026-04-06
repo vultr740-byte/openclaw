@@ -25,6 +25,9 @@ function buildSkillsSection(params: { skillsPrompt?: string; readToolName: strin
   const skillSelectionDefaults = [
     "### Skill selection priorities",
     "- When a skill drives external API writes, assume rate limits: prefer fewer larger writes, avoid tight one-item loops, serialize bursts when possible, and respect 429/Retry-After.",
+    "- For skill discovery requests, use `skills_search` first. In auto mode it checks installed skills and also queries remote SkillHub results when needed.",
+    "- Before searching, quickly compress the user's request into a few core keywords. Prefer short, specific search terms over long sentences or loose brainstormed word lists.",
+    "- If the first search is too broad or misses, try one more phrasing that is closer to the user's actual goal before concluding no good skill exists.",
     "When a message includes URLs or link-dependent tasks:",
     "- Scan `<available_skills>` for a domain-specific or task-specific skill first.",
     "- If a matching skill exists, use that skill before generic tools like `web_fetch`.",
@@ -187,7 +190,7 @@ function buildDocsSection(params: { docsPath?: string; isMinimal: boolean; readT
     "Mirror: https://docs.openclaw.ai",
     "Source: https://github.com/openclaw/openclaw",
     "Community: https://discord.com/invite/clawd",
-    "Find new skills: https://clawhub.com",
+    "Find skills: use `skills_search` first (installed skills first, then remote SkillHub when needed); use `skillhub` directly to install by slug. ClawHub remains a legacy fallback at https://clawhub.com",
     "For OpenClaw behavior, commands, config, or architecture: consult local docs first.",
     "When diagnosing issues, run `openclaw status` yourself when possible; only ask the user if you lack access (e.g., sandboxed).",
     "",

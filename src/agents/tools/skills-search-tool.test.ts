@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { writeSkill } from "../skills.e2e-test-helpers.js";
+import type { SkillhubSearchMatch } from "./skillhub-tool.js";
 import { createSkillsSearchTool } from "./skills-search-tool.js";
 
 async function createWorkspace() {
@@ -44,11 +45,14 @@ describe("skills_search tool", () => {
         query: "https://x.com/elonmusk/status/123",
       });
       const details = result.details as {
+        searchedRemote?: boolean;
+        localMatches?: Array<{ name?: string; command?: string }>;
         matches?: Array<{ name?: string; command?: string }>;
       };
-      const names = (details.matches ?? []).map((match) => match.name);
+      const names = (details.localMatches ?? []).map((match) => match.name);
       expect(names).toContain("x-twitter-fetch");
-      const target = (details.matches ?? []).find((match) => match.name === "x-twitter-fetch");
+      expect(details.searchedRemote).toBe(true);
+      const target = (details.localMatches ?? []).find((match) => match.name === "x-twitter-fetch");
       expect(target?.command).toBe("/x_twitter_fetch");
     } finally {
       await cleanupWorkspace(paths);
@@ -79,13 +83,15 @@ describe("skills_search tool", () => {
         query: "https://x.com/elonmusk/status/123",
       });
       const details = result.details as {
-        matches?: Array<{ name?: string }>;
+        searchedRemote?: boolean;
+        localMatches?: Array<{ name?: string }>;
       };
-      const rankedNames = (details.matches ?? [])
+      const rankedNames = (details.localMatches ?? [])
         .map((match) => match.name)
         .filter((name): name is string => Boolean(name));
       const xRank = rankedNames.indexOf("x-twitter-fetch");
       const webNotesRank = rankedNames.indexOf("web-notes");
+      expect(details.searchedRemote).toBe(true);
       expect(xRank).toBeGreaterThanOrEqual(0);
       expect(webNotesRank).toBeGreaterThanOrEqual(0);
       expect(xRank).toBeLessThan(webNotesRank);
@@ -142,6 +148,160 @@ describe("skills_search tool", () => {
       };
       const names = (details.matches ?? []).map((match) => match.name);
       expect(names).not.toContain("hidden-skill");
+    } finally {
+      await cleanupWorkspace(paths);
+    }
+  });
+
+  it("includes remote SkillHub matches in auto mode and recommends remote when local is weak", async () => {
+    const paths = await createWorkspace();
+    try {
+      await writeSkill({
+        dir: path.join(paths.workspaceDir, "skills", "summarize"),
+        name: "summarize",
+        description: "Summarize arbitrary content.",
+      });
+
+      const remoteSearch = vi
+        .fn<(params: { query: string; limit: number }) => Promise<SkillhubSearchMatch[]>>()
+        .mockResolvedValue([
+          {
+            slug: "wechat-article-reader",
+            name: "微信公众号文章导出",
+            summary: "将微信公众号文章导出为 Markdown 格式。",
+            version: "1.0.0",
+          },
+        ]);
+
+      const tool = createSkillsSearchTool({
+        workspaceDir: paths.workspaceDir,
+        remoteSearch,
+      });
+      const result = await tool.execute("call-auto-remote", {
+        query: "微信公众号文章",
+      });
+      const details = result.details as {
+        scope?: string;
+        recommendedSource?: string;
+        searchedRemote?: boolean;
+        remoteMatchCount?: number;
+        matches?: Array<{ source?: string; slug?: string; name?: string }>;
+      };
+
+      expect(details.scope).toBe("auto");
+      expect(details.searchedRemote).toBe(true);
+      expect(details.recommendedSource).toBe("remote");
+      expect(details.remoteMatchCount).toBe(1);
+      expect(details.matches?.[0]?.source).toBe("remote");
+      expect(details.matches?.[0]?.slug).toBe("wechat-article-reader");
+      expect(remoteSearch).toHaveBeenCalledWith({
+        query: "微信公众号文章",
+        limit: 8,
+        config: undefined,
+      });
+    } finally {
+      await cleanupWorkspace(paths);
+    }
+  });
+
+  it("still queries remote in auto mode when local search returns generic matches", async () => {
+    const paths = await createWorkspace();
+    try {
+      await writeSkill({
+        dir: path.join(paths.workspaceDir, "skills", "summarize"),
+        name: "summarize",
+        description: "Summarize arbitrary URLs and content.",
+      });
+      await writeSkill({
+        dir: path.join(paths.workspaceDir, "skills", "browse"),
+        name: "browse",
+        description: "Browse web pages and inspect sites.",
+      });
+
+      const remoteSearch = vi
+        .fn<(params: { query: string; limit: number }) => Promise<SkillhubSearchMatch[]>>()
+        .mockResolvedValue([
+          {
+            slug: "wechat-article-reader",
+            name: "WeChat MP Reader",
+            summary: "Read and export WeChat public account articles.",
+            version: "1.2.0",
+          },
+        ]);
+
+      const tool = createSkillsSearchTool({
+        workspaceDir: paths.workspaceDir,
+        remoteSearch,
+      });
+      const result = await tool.execute("call-auto-generic-local", {
+        query: "wechat public account article reader",
+      });
+      const details = result.details as {
+        scope?: string;
+        searchedRemote?: boolean;
+        localMatchCount?: number;
+        remoteMatchCount?: number;
+        recommendedSource?: string;
+        matches?: Array<{ source?: string; slug?: string; name?: string }>;
+      };
+
+      expect(details.scope).toBe("auto");
+      expect(details.searchedRemote).toBe(true);
+      expect(details.localMatchCount).toBeGreaterThan(0);
+      expect(details.remoteMatchCount).toBe(1);
+      expect(details.recommendedSource).toBe("remote");
+      expect(details.matches?.some((match) => match.source === "local")).toBe(true);
+      expect(details.matches?.[0]?.source).toBe("remote");
+      expect(details.matches?.[0]?.slug).toBe("wechat-article-reader");
+      expect(remoteSearch).toHaveBeenCalledWith({
+        query: "wechat public account article reader",
+        limit: 8,
+        config: undefined,
+      });
+    } finally {
+      await cleanupWorkspace(paths);
+    }
+  });
+
+  it("supports remote-only scope", async () => {
+    const paths = await createWorkspace();
+    try {
+      const remoteSearch = vi
+        .fn<(params: { query: string; limit: number }) => Promise<SkillhubSearchMatch[]>>()
+        .mockResolvedValue([
+          {
+            slug: "wechat-reader",
+            name: "WeChat Article Reader",
+            summary: "Read WeChat public account articles.",
+            version: "1.0.0",
+          },
+        ]);
+
+      const tool = createSkillsSearchTool({
+        workspaceDir: paths.workspaceDir,
+        remoteSearch,
+      });
+      const result = await tool.execute("call-remote-only", {
+        query: "wechat article",
+        scope: "remote",
+        limit: 3,
+      });
+      const details = result.details as {
+        scope?: string;
+        searchedRemote?: boolean;
+        totalSkills?: number;
+        localMatchCount?: number;
+        remoteMatchCount?: number;
+        matches?: Array<{ source?: string; slug?: string }>;
+      };
+
+      expect(details.scope).toBe("remote");
+      expect(details.searchedRemote).toBe(true);
+      expect(details.totalSkills).toBeUndefined();
+      expect(details.localMatchCount).toBe(0);
+      expect(details.remoteMatchCount).toBe(1);
+      expect(details.matches?.[0]?.source).toBe("remote");
+      expect(details.matches?.[0]?.slug).toBe("wechat-reader");
     } finally {
       await cleanupWorkspace(paths);
     }

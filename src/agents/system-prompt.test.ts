@@ -206,6 +206,21 @@ describe("buildAgentSystemPrompt", () => {
     expect(prompt).toContain("Do not invent commands");
   });
 
+  it("mentions the local-first skill discovery path before the legacy ClawHub fallback", () => {
+    const prompt = buildAgentSystemPrompt({
+      workspaceDir: "/tmp/openclaw",
+      docsPath: "/tmp/openclaw/docs",
+      skillsPrompt:
+        "<available_skills>\n  <skill>\n    <name>find-skills</name>\n  </skill>\n</available_skills>",
+    });
+
+    expect(prompt).toContain("use `skills_search` first");
+    expect(prompt).toContain("use `skillhub` directly to install by slug");
+    expect(prompt).toContain("compress the user's request into a few core keywords");
+    expect(prompt).toContain("Prefer short, specific search terms");
+    expect(prompt).toContain("ClawHub remains a legacy fallback");
+  });
+
   it("guides runtime completion events without exposing internal metadata", () => {
     const prompt = buildAgentSystemPrompt({
       workspaceDir: "/tmp/openclaw",

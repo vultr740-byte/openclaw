@@ -57,8 +57,15 @@ describe("tool-policy", () => {
     const coding = resolveToolProfilePolicy("coding");
     expect(coding?.allow).toContain("read");
     expect(coding?.allow).toContain("cron");
+    expect(coding?.allow).toContain("skills_search");
+    expect(coding?.allow).toContain("skillhub");
     expect(coding?.allow).not.toContain("gateway");
     expect(resolveToolProfilePolicy("nope")).toBeUndefined();
+  });
+
+  it("includes the skills group shorthand", () => {
+    const expanded = expandToolGroups(["group:skills"]);
+    expect(new Set(expanded)).toEqual(new Set(["skills_search", "skillhub"]));
   });
 
   it("includes core tool groups in group:openclaw", () => {
@@ -67,6 +74,8 @@ describe("tool-policy", () => {
     expect(group).toContain("message");
     expect(group).toContain("subagents");
     expect(group).toContain("session_status");
+    expect(group).toContain("skills_search");
+    expect(group).toContain("skillhub");
     expect(group).toContain("tts");
   });
 

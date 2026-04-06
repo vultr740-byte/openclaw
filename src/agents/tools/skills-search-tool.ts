@@ -1,5 +1,6 @@
 import { Type } from "@sinclair/typebox";
 import type { OpenClawConfig } from "../../config/config.js";
+import { optionalStringEnum } from "../schema/typebox.js";
 import {
   buildWorkspaceSkillCommandSpecs,
   filterWorkspaceSkillEntries,
@@ -8,10 +9,18 @@ import {
 } from "../skills.js";
 import type { AnyAgentTool } from "./common.js";
 import { jsonResult, readNumberParam, readStringParam } from "./common.js";
+import { searchSkillhubMatches, type SkillhubSearchMatch } from "./skillhub-tool.js";
+
+const SKILLS_SEARCH_SCOPES = ["auto", "local", "remote"] as const;
 
 const SkillsSearchSchema = Type.Object({
   query: Type.String({
     description: "Capability, domain, or URL to match against available skills.",
+  }),
+  scope: optionalStringEnum(SKILLS_SEARCH_SCOPES, {
+    description:
+      "Search scope. auto searches installed skills first and also checks remote SkillHub results.",
+    default: "auto",
   }),
   limit: Type.Optional(
     Type.Number({
@@ -39,12 +48,36 @@ const SEARCH_FIELDS = Object.keys(SEARCH_FIELD_BOOSTS) as SearchFieldKey[];
 type SearchFieldKey = keyof typeof SEARCH_FIELD_BOOSTS;
 
 type ScoredSkillMatch = {
+  source: "local";
   name: string;
   description: string;
   path: string;
   score: number;
   command?: string;
 };
+
+type RemoteSkillMatch = {
+  source: "remote";
+  name: string;
+  description: string;
+  slug: string;
+  version?: string;
+  homepage?: string;
+  categories?: string[];
+  downloads?: number;
+  stars?: number;
+  updatedAt?: number;
+};
+
+type UnifiedSkillMatch = ScoredSkillMatch | RemoteSkillMatch;
+
+type SkillsSearchScope = (typeof SKILLS_SEARCH_SCOPES)[number];
+
+type RemoteSkillSearchFn = (params: {
+  query: string;
+  limit: number;
+  config?: OpenClawConfig;
+}) => Promise<SkillhubSearchMatch[]>;
 
 type DomainHints = {
   hosts: string[];
@@ -325,75 +358,254 @@ function buildQueryTerms(query: string, domainHints: DomainHints): string[] {
   return [...unique];
 }
 
+function buildLocalMatches(params: {
+  workspaceDir: string;
+  config?: OpenClawConfig;
+  query: string;
+  limit: number;
+}): {
+  totalSkills: number;
+  matchCount: number;
+  matches: ScoredSkillMatch[];
+} {
+  const entries = filterWorkspaceSkillEntries(
+    loadWorkspaceSkillEntries(params.workspaceDir, { config: params.config }),
+    params.config,
+  ).filter((entry) => entry.invocation?.disableModelInvocation !== true);
+  const commandSpecs = buildWorkspaceSkillCommandSpecs(params.workspaceDir, {
+    config: params.config,
+    entries,
+  });
+  const commandBySkillName = new Map(
+    commandSpecs.map((spec) => [spec.skillName.toLowerCase(), spec.name]),
+  );
+  const domainHints = extractDomainHints(params.query);
+  const terms = buildQueryTerms(params.query, domainHints);
+  const docs = entries
+    .map((entry) =>
+      buildSearchDocument(entry, commandBySkillName.get(entry.skill.name.toLowerCase())),
+    )
+    .filter((entry): entry is SkillSearchDoc => entry !== null);
+  const index = buildSearchIndex(docs);
+  const matches: ScoredSkillMatch[] = [];
+
+  for (const doc of index.docs) {
+    const score = scoreDocument({
+      query: params.query,
+      terms,
+      domainHints,
+      index,
+      doc,
+    });
+    if (score <= 0) {
+      continue;
+    }
+    matches.push({
+      source: "local",
+      name: doc.name,
+      description: doc.description,
+      path: doc.path,
+      score,
+      ...(doc.command ? { command: doc.command } : {}),
+    });
+  }
+
+  matches.sort((left, right) => {
+    if (right.score !== left.score) {
+      return right.score - left.score;
+    }
+    return left.name.localeCompare(right.name);
+  });
+
+  return {
+    totalSkills: entries.length,
+    matchCount: matches.length,
+    matches: matches.slice(0, params.limit),
+  };
+}
+
+function buildRemoteMatches(results: SkillhubSearchMatch[], limit: number): RemoteSkillMatch[] {
+  return results.slice(0, limit).map((match) => ({
+    source: "remote",
+    name: match.name,
+    description: match.summary,
+    slug: match.slug,
+    ...(match.version ? { version: match.version } : {}),
+    ...(match.homepage ? { homepage: match.homepage } : {}),
+    ...(match.categories ? { categories: match.categories } : {}),
+    ...(typeof match.downloads === "number" ? { downloads: match.downloads } : {}),
+    ...(typeof match.stars === "number" ? { stars: match.stars } : {}),
+    ...(typeof match.updatedAt === "number" ? { updatedAt: match.updatedAt } : {}),
+  }));
+}
+
+function normalizeSearchScope(value: string | undefined): SkillsSearchScope {
+  if (!value) {
+    return "auto";
+  }
+  return SKILLS_SEARCH_SCOPES.includes(value as SkillsSearchScope)
+    ? (value as SkillsSearchScope)
+    : "auto";
+}
+
+function normalizeMatchIdentity(match: UnifiedSkillMatch): string {
+  if (match.source === "remote") {
+    return `remote:${match.slug.toLowerCase()}`;
+  }
+  return `local:${match.name.toLowerCase()}`;
+}
+
+function hasExactLocalMatch(query: string, localMatches: ScoredSkillMatch[]): boolean {
+  const normalized = query.trim().toLowerCase();
+  if (!normalized) {
+    return false;
+  }
+  return localMatches.some((match) => {
+    const normalizedName = match.name.trim().toLowerCase();
+    const normalizedCommand = match.command?.trim().toLowerCase();
+    return normalizedName === normalized || normalizedCommand === normalized;
+  });
+}
+
+function resolveRecommendedSource(params: {
+  query: string;
+  localMatches: ScoredSkillMatch[];
+  remoteMatches: RemoteSkillMatch[];
+}): "local" | "remote" | "none" {
+  if (params.remoteMatches.length > 0 && !hasExactLocalMatch(params.query, params.localMatches)) {
+    return "remote";
+  }
+  if (params.localMatches.length > 0) {
+    return "local";
+  }
+  if (params.remoteMatches.length > 0) {
+    return "remote";
+  }
+  return "none";
+}
+
+function combineMatches(params: {
+  recommendedSource: "local" | "remote" | "none";
+  localMatches: ScoredSkillMatch[];
+  remoteMatches: RemoteSkillMatch[];
+  limit: number;
+}): UnifiedSkillMatch[] {
+  const ordered =
+    params.recommendedSource === "remote"
+      ? [...params.remoteMatches, ...params.localMatches]
+      : [...params.localMatches, ...params.remoteMatches];
+  const seen = new Set<string>();
+  const combined: UnifiedSkillMatch[] = [];
+  for (const match of ordered) {
+    const identity = normalizeMatchIdentity(match);
+    if (seen.has(identity)) {
+      continue;
+    }
+    seen.add(identity);
+    combined.push(match);
+    if (combined.length >= params.limit) {
+      break;
+    }
+  }
+  return combined;
+}
+
+function resolveRemoteSearchState(params: {
+  scope: SkillsSearchScope;
+  queriedRemote: boolean;
+  remoteMatches: RemoteSkillMatch[];
+  remoteError?: string;
+}): { searchedRemote: boolean; remoteSkippedReason?: string } {
+  if (params.queriedRemote) {
+    return { searchedRemote: true };
+  }
+  if (params.scope === "local") {
+    return { searchedRemote: false, remoteSkippedReason: "scope_local" };
+  }
+  if (params.remoteError) {
+    return { searchedRemote: false, remoteSkippedReason: "remote_error" };
+  }
+  return { searchedRemote: false, remoteSkippedReason: "not_requested" };
+}
+
 export function createSkillsSearchTool(options: {
   workspaceDir: string;
   config?: OpenClawConfig;
+  remoteSearch?: RemoteSkillSearchFn;
 }): AnyAgentTool {
+  const remoteSearch =
+    options.remoteSearch ??
+    (async ({ query, limit, config }: { query: string; limit: number; config?: OpenClawConfig }) =>
+      await searchSkillhubMatches({ query, limit, config }));
   return {
     label: "Skills Search",
     name: "skills_search",
     description:
-      "Search available local skills by capability/domain/URL and return best matches (with command names). Use after recoverable tool failures before asking the user for manual paste.",
+      "Search installed skills first and, in auto mode, also check remote SkillHub results for new skills to install. Use for skill discovery by capability, domain, URL, or command name.",
     parameters: SkillsSearchSchema,
     execute: async (_toolCallId, args) => {
       const params = args as Record<string, unknown>;
       const query = readStringParam(params, "query", { required: true });
+      const scope = normalizeSearchScope(readStringParam(params, "scope"));
       const requestedLimit = readNumberParam(params, "limit", { integer: true });
       const limit = clampMatchLimit(requestedLimit);
-      const entries = filterWorkspaceSkillEntries(
-        loadWorkspaceSkillEntries(options.workspaceDir, { config: options.config }),
-        options.config,
-      ).filter((entry) => entry.invocation?.disableModelInvocation !== true);
-      const commandSpecs = buildWorkspaceSkillCommandSpecs(options.workspaceDir, {
-        config: options.config,
-        entries,
-      });
-      const commandBySkillName = new Map(
-        commandSpecs.map((spec) => [spec.skillName.toLowerCase(), spec.name]),
-      );
-      const domainHints = extractDomainHints(query);
-      const terms = buildQueryTerms(query, domainHints);
-      const docs = entries
-        .map((entry) =>
-          buildSearchDocument(entry, commandBySkillName.get(entry.skill.name.toLowerCase())),
-        )
-        .filter((entry): entry is SkillSearchDoc => entry !== null);
-      const index = buildSearchIndex(docs);
-      const matches: ScoredSkillMatch[] = [];
-
-      for (const doc of index.docs) {
-        const score = scoreDocument({
-          query,
-          terms,
-          domainHints,
-          index,
-          doc,
-        });
-        if (score <= 0) {
-          continue;
+      const localResult =
+        scope === "remote"
+          ? { totalSkills: 0, matchCount: 0, matches: [] as ScoredSkillMatch[] }
+          : buildLocalMatches({
+              workspaceDir: options.workspaceDir,
+              config: options.config,
+              query,
+              limit,
+            });
+      let remoteMatches: RemoteSkillMatch[] = [];
+      let remoteError: string | undefined;
+      const shouldQueryRemote = scope !== "local";
+      let queriedRemote = false;
+      if (shouldQueryRemote) {
+        queriedRemote = true;
+        try {
+          remoteMatches = buildRemoteMatches(
+            await remoteSearch({ query, limit, config: options.config }),
+            limit,
+          );
+        } catch (error) {
+          remoteError = error instanceof Error ? error.message : String(error);
         }
-        matches.push({
-          name: doc.name,
-          description: doc.description,
-          path: doc.path,
-          score,
-          ...(doc.command ? { command: doc.command } : {}),
-        });
       }
-
-      matches.sort((left, right) => {
-        if (right.score !== left.score) {
-          return right.score - left.score;
-        }
-        return left.name.localeCompare(right.name);
+      const recommendedSource = resolveRecommendedSource({
+        query,
+        localMatches: localResult.matches,
+        remoteMatches,
+      });
+      const matches = combineMatches({
+        recommendedSource,
+        localMatches: localResult.matches,
+        remoteMatches,
+        limit,
+      });
+      const remoteState = resolveRemoteSearchState({
+        scope,
+        queriedRemote,
+        remoteMatches,
+        remoteError,
       });
 
       return jsonResult({
         query,
+        scope,
         limit,
-        totalSkills: entries.length,
+        ...(scope !== "remote" ? { totalSkills: localResult.totalSkills } : {}),
         matchCount: matches.length,
-        matches: matches.slice(0, limit),
+        localMatchCount: localResult.matchCount,
+        remoteMatchCount: remoteMatches.length,
+        remoteProvider: scope !== "local" ? "skillhub" : undefined,
+        remoteError,
+        ...remoteState,
+        recommendedSource,
+        localMatches: localResult.matches,
+        remoteMatches,
+        matches,
       });
     },
   };

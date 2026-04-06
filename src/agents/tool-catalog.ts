@@ -27,6 +27,7 @@ type CoreToolDefinition = {
 const CORE_TOOL_SECTION_ORDER: Array<{ id: string; label: string }> = [
   { id: "fs", label: "Files" },
   { id: "runtime", label: "Runtime" },
+  { id: "skills", label: "Skills" },
   { id: "web", label: "Web" },
   { id: "memory", label: "Memory" },
   { id: "sessions", label: "Sessions" },
@@ -80,6 +81,22 @@ const CORE_TOOL_DEFINITIONS: CoreToolDefinition[] = [
     description: "Manage background processes",
     sectionId: "runtime",
     profiles: ["coding"],
+  },
+  {
+    id: "skills_search",
+    label: "skills_search",
+    description: "Search installed skills and remote SkillHub",
+    sectionId: "skills",
+    profiles: ["coding"],
+    includeInOpenClawGroup: true,
+  },
+  {
+    id: "skillhub",
+    label: "skillhub",
+    description: "Search and install remote skills",
+    sectionId: "skills",
+    profiles: ["coding"],
+    includeInOpenClawGroup: true,
   },
   {
     id: "web_search",

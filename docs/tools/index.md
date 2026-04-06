@@ -37,7 +37,7 @@ Per-agent override: `agents.list[].tools.profile`.
 Profiles:
 
 - `minimal`: `session_status` only
-- `coding`: `group:fs`, `group:runtime`, `group:sessions`, `group:memory`, `image`
+- `coding`: `group:fs`, `group:runtime`, `group:skills`, `group:sessions`, `group:memory`, `image`
 - `messaging`: `group:messaging`, `sessions_list`, `sessions_history`, `sessions_send`, `session_status`
 - `full`: no restriction (same as unset)
 

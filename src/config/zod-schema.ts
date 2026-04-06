@@ -819,6 +819,18 @@ export const OpenClawSchema = z
     skills: z
       .object({
         allowBundled: z.array(z.string()).optional(),
+        hub: z
+          .object({
+            enabled: z.boolean().optional(),
+            searchUrl: HttpUrlSchema.optional(),
+            indexUrl: HttpUrlSchema.optional(),
+            detailUrlTemplate: z.string().min(1).optional(),
+            primaryDownloadUrlTemplate: z.string().min(1).optional(),
+            downloadUrlTemplate: z.string().min(1).optional(),
+            timeoutMs: z.number().int().positive().optional(),
+          })
+          .strict()
+          .optional(),
         load: z
           .object({
             extraDirs: z.array(z.string()).optional(),

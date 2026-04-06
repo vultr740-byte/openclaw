@@ -308,6 +308,7 @@ describe("createOpenClawCodingTools", () => {
       "sessions_spawn",
       "subagents",
       "session_status",
+      "skillhub",
       "skills_search",
       "image",
     ]);
@@ -406,8 +407,19 @@ describe("createOpenClawCodingTools", () => {
     expect(names.has("message")).toBe(true);
     expect(names.has("sessions_send")).toBe(true);
     expect(names.has("sessions_spawn")).toBe(false);
+    expect(names.has("skills_search")).toBe(false);
+    expect(names.has("skillhub")).toBe(false);
     expect(names.has("exec")).toBe(false);
     expect(names.has("browser")).toBe(false);
+  });
+
+  it("includes native skill discovery tools in the coding profile", () => {
+    const tools = createOpenClawCodingTools({
+      config: { tools: { profile: "coding" } },
+    });
+    const names = new Set(tools.map((tool) => tool.name));
+    expect(names.has("skills_search")).toBe(true);
+    expect(names.has("skillhub")).toBe(true);
   });
   it("expands group shorthands in global tool policy", () => {
     const tools = createOpenClawCodingTools({

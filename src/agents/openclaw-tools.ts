@@ -20,6 +20,7 @@ import { createSessionsHistoryTool } from "./tools/sessions-history-tool.js";
 import { createSessionsListTool } from "./tools/sessions-list-tool.js";
 import { createSessionsSendTool } from "./tools/sessions-send-tool.js";
 import { createSessionsSpawnTool } from "./tools/sessions-spawn-tool.js";
+import { createSkillhubTool } from "./tools/skillhub-tool.js";
 import { createSkillsSearchTool } from "./tools/skills-search-tool.js";
 import { createSubagentsTool } from "./tools/subagents-tool.js";
 import { createTtsTool } from "./tools/tts-tool.js";
@@ -126,6 +127,10 @@ export function createOpenClawTools(options?: {
     workspaceDir,
     config: options?.config,
   });
+  const skillhubTool = createSkillhubTool({
+    workspaceDir,
+    config: options?.config,
+  });
   const messageTool = options?.disableMessageTool
     ? null
     : createMessageTool({
@@ -213,6 +218,7 @@ export function createOpenClawTools(options?: {
       agentSessionKey: options?.agentSessionKey,
       config: options?.config,
     }),
+    skillhubTool,
     skillsSearchTool,
     ...(webSearchTool ? [webSearchTool] : []),
     ...(webFetchTool ? [webFetchTool] : []),
