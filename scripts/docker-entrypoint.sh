@@ -76,32 +76,12 @@ run_as_runtime_user() {
   "$@"
 }
 
-resolve_bootstrap_channels() {
-  if [ -n "${OPENCLAW_BOOTSTRAP_CHANNELS:-}" ]; then
-    printf '%s' "$OPENCLAW_BOOTSTRAP_CHANNELS"
-    return
-  fi
+resolve_bootstrap_channel() {
   printf '%s' "${OPENCLAW_BOOTSTRAP_CHANNEL:-}"
 }
 
 has_weixin_bootstrap_channel() {
-  local channels
-  channels="$(resolve_bootstrap_channels)"
-  if [ -z "$channels" ]; then
-    return 1
-  fi
-
-  local channel
-  IFS=',' read -r -a _bootstrap_channel_list <<<"$channels"
-  for channel in "${_bootstrap_channel_list[@]}"; do
-    channel="${channel//[[:space:]]/}"
-    case "$channel" in
-      weixin)
-        return 0
-        ;;
-    esac
-  done
-  return 1
+  [ "$(resolve_bootstrap_channel)" = "weixin" ]
 }
 
 should_inject_bind=false
@@ -152,15 +132,15 @@ ensure_legacy_workspace() {
 }
 
 bootstrap_channels() {
-  local channels
-  channels="$(resolve_bootstrap_channels)"
-  if [ -z "$channels" ]; then
+  local channel
+  channel="$(resolve_bootstrap_channel)"
+  if [ -z "$channel" ]; then
     return 0
   fi
   if has_weixin_bootstrap_channel; then
     return 0
   fi
-  run_as_runtime_user openclaw channels bootstrap --channels "$channels"
+  run_as_runtime_user openclaw channels bootstrap --channels "$channel"
 }
 
 bootstrap_config() {
@@ -209,10 +189,8 @@ const rawSessionDmScope = process.env.OPENCLAW_SESSION_DM_SCOPE?.trim() || "";
 const rawXaiBaseUrl = process.env.XAI_BASE_URL?.trim() || "";
 const rawXaiApiKey = process.env.XAI_API_KEY?.trim() || "";
 const rawXaiModel = process.env.XAI_MODEL?.trim() || "";
-const rawBootstrapChannels =
-  process.env.OPENCLAW_BOOTSTRAP_CHANNELS?.trim() ||
-  process.env.OPENCLAW_BOOTSTRAP_CHANNEL?.trim() ||
-  "";
+const rawBootstrapChannel = process.env.OPENCLAW_BOOTSTRAP_CHANNEL?.trim().toLowerCase() || "";
+const rawSlimMode = process.env.OPENCLAW_SLIM_MODE?.trim().toLowerCase() || "";
 const xaiConfigured = Boolean(rawXaiBaseUrl && rawXaiApiKey && rawXaiModel);
 
 let allowFrom = [];
@@ -289,16 +267,6 @@ function normalizeAllowFromEntries(value) {
   return value.map((entry) => String(entry).trim()).filter(Boolean);
 }
 
-function normalizeBootstrapChannelList(value) {
-  if (!value) {
-    return [];
-  }
-  return String(value)
-    .split(",")
-    .map((entry) => entry.trim().toLowerCase())
-    .filter(Boolean);
-}
-
 function hasConfiguredTelegramToken(channelConfig) {
   if (!channelConfig || typeof channelConfig !== "object" || Array.isArray(channelConfig)) {
     return false;
@@ -326,9 +294,15 @@ function hasConfiguredTelegramToken(channelConfig) {
   );
 }
 
-const bootstrapChannelList = normalizeBootstrapChannelList(rawBootstrapChannels);
-const bootstrapWeixinOnly =
-  bootstrapChannelList.length === 1 && bootstrapChannelList[0] === "weixin";
+const slimModeEnabled = ["1", "true", "yes", "on"].includes(rawSlimMode);
+const bootstrapChannel = rawBootstrapChannel;
+
+if (slimModeEnabled && !bootstrapChannel) {
+  console.error(
+    "openclaw-entrypoint: OPENCLAW_SLIM_MODE requires OPENCLAW_BOOTSTRAP_CHANNEL to select a single channel.",
+  );
+  process.exit(1);
+}
 
 let controlUiAllowedOrigins = null;
 let shouldMergeDerivedControlUiAllowedOrigins = false;
@@ -484,7 +458,7 @@ try {
       root.channels = nextChannels;
     }
 
-    if (bootstrapWeixinOnly) {
+    if (slimModeEnabled && bootstrapChannel === "weixin") {
       nextBrowser.enabled = false;
       root.browser = nextBrowser;
 
@@ -553,6 +527,85 @@ try {
           : {}),
         enabled: true,
       };
+      nextPlugins.entries = nextPluginEntries;
+      root.plugins = nextPlugins;
+    }
+
+    if (slimModeEnabled && bootstrapChannel === "telegram") {
+      nextBrowser.enabled = false;
+      root.browser = nextBrowser;
+
+      nextApprovalsExec.enabled = false;
+      nextApprovals.exec = nextApprovalsExec;
+      root.approvals = nextApprovals;
+
+      nextCanvasHost.enabled = false;
+      root.canvasHost = nextCanvasHost;
+
+      nextAcp.enabled = false;
+      if (
+        nextAcp.dispatch &&
+        typeof nextAcp.dispatch === "object" &&
+        !Array.isArray(nextAcp.dispatch)
+      ) {
+        nextAcp.dispatch.enabled = false;
+      }
+      root.acp = nextAcp;
+
+      nextChannels.telegram = {
+        ...(nextChannels.telegram &&
+        typeof nextChannels.telegram === "object" &&
+        !Array.isArray(nextChannels.telegram)
+          ? nextChannels.telegram
+          : {}),
+        enabled: true,
+      };
+      if (
+        nextChannels["openclaw-weixin"] &&
+        typeof nextChannels["openclaw-weixin"] === "object" &&
+        !Array.isArray(nextChannels["openclaw-weixin"])
+      ) {
+        nextChannels["openclaw-weixin"] = {
+          ...nextChannels["openclaw-weixin"],
+          enabled: false,
+        };
+      }
+      root.channels = nextChannels;
+
+      nextPlugins.enabled = true;
+      nextPlugins.allow = ["telegram"];
+      nextPlugins.slots = {
+        ...(nextPlugins.slots && typeof nextPlugins.slots === "object" && !Array.isArray(nextPlugins.slots)
+          ? nextPlugins.slots
+          : {}),
+        memory: "none",
+      };
+      nextPluginEntries.telegram = {
+        ...(nextPluginEntries.telegram &&
+        typeof nextPluginEntries.telegram === "object" &&
+        !Array.isArray(nextPluginEntries.telegram)
+          ? nextPluginEntries.telegram
+          : {}),
+        enabled: true,
+      };
+      nextPluginEntries.acpx = {
+        ...(nextPluginEntries.acpx &&
+        typeof nextPluginEntries.acpx === "object" &&
+        !Array.isArray(nextPluginEntries.acpx)
+          ? nextPluginEntries.acpx
+          : {}),
+        enabled: false,
+      };
+      if (
+        nextPluginEntries["openclaw-weixin"] &&
+        typeof nextPluginEntries["openclaw-weixin"] === "object" &&
+        !Array.isArray(nextPluginEntries["openclaw-weixin"])
+      ) {
+        nextPluginEntries["openclaw-weixin"] = {
+          ...nextPluginEntries["openclaw-weixin"],
+          enabled: false,
+        };
+      }
       nextPlugins.entries = nextPluginEntries;
       root.plugins = nextPlugins;
     }

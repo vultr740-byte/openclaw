@@ -31,12 +31,21 @@ function runEntrypointBootstrap(params: {
     botToken?: string;
     allowFrom?: unknown;
   };
+  templateAgentsDefaults?: {
+    maxConcurrent?: number;
+    subagents?: { maxConcurrent?: number };
+  };
 }) {
   const dir = mkdtempSync(path.join(os.tmpdir(), "openclaw-entrypoint-test-"));
   createdTempDirs.push(dir);
 
   const configPath = path.join(dir, "config.json");
   const templateConfig = {
+    agents: params.templateAgentsDefaults
+      ? {
+          defaults: params.templateAgentsDefaults,
+        }
+      : undefined,
     tools: {
       elevated: {
         allowFrom: {
@@ -182,6 +191,42 @@ describe("docker-entrypoint telegram bootstrap", () => {
     expect(nextConfig.channels?.telegram?.enabled).toBe(true);
     expect(nextConfig.channels?.telegram?.dmPolicy).toBe("allowlist");
     expect(nextConfig.channels?.telegram?.allowFrom).toEqual(["123456789"]);
+  });
+
+  it("does not apply slim trimming unless OPENCLAW_SLIM_MODE is enabled", () => {
+    const nextConfig = runEntrypointBootstrap({
+      env: {
+        OPENCLAW_BOOTSTRAP_CHANNEL: "telegram",
+        TELEGRAM_BOT_TOKEN: "telegram-token",
+        TELEGRAM_ALLOW_FROM: "123456789",
+      },
+      templateAgentsDefaults: {
+        maxConcurrent: 4,
+        subagents: {
+          maxConcurrent: 8,
+        },
+      },
+    }) as {
+      browser?: { enabled?: boolean };
+      approvals?: { exec?: { enabled?: boolean } };
+      canvasHost?: { enabled?: boolean };
+      acp?: { enabled?: boolean; dispatch?: { enabled?: boolean } };
+      agents?: { defaults?: { maxConcurrent?: number; subagents?: { maxConcurrent?: number } } };
+      plugins?: {
+        allow?: unknown;
+        entries?: Record<string, { enabled?: boolean }>;
+      };
+    };
+
+    expect(nextConfig.browser?.enabled).toBeUndefined();
+    expect(nextConfig.approvals?.exec?.enabled).toBeUndefined();
+    expect(nextConfig.canvasHost?.enabled).toBeUndefined();
+    expect(nextConfig.acp?.enabled).toBeUndefined();
+    expect(nextConfig.acp?.dispatch?.enabled).toBeUndefined();
+    expect(nextConfig.agents?.defaults?.maxConcurrent).toBe(4);
+    expect(nextConfig.agents?.defaults?.subagents?.maxConcurrent).toBe(8);
+    expect(nextConfig.plugins?.allow).toBeUndefined();
+    expect(nextConfig.plugins?.entries?.acpx?.enabled).toBeUndefined();
   });
 });
 
@@ -330,6 +375,7 @@ describe("docker-entrypoint weixin slim bootstrap", () => {
     const nextConfig = runEntrypointBootstrap({
       env: {
         OPENCLAW_BOOTSTRAP_CHANNEL: "weixin",
+        OPENCLAW_SLIM_MODE: "1",
         OPENCLAW_GATEWAY_TOKEN: "gateway-token",
         RAILWAY_STATIC_URL: "openclaw-production-1691.up.railway.app",
       },
@@ -374,6 +420,84 @@ describe("docker-entrypoint weixin slim bootstrap", () => {
     expect(nextConfig.gateway?.controlUi?.allowedOrigins).toEqual([
       "https://openclaw-production-1691.up.railway.app",
     ]);
+  });
+});
+
+describe("docker-entrypoint telegram slim bootstrap", () => {
+  it("rewrites the generic railway template into a telegram-only slim config when bootstrapping telegram", () => {
+    const nextConfig = runEntrypointBootstrap({
+      env: {
+        OPENCLAW_BOOTSTRAP_CHANNEL: "telegram",
+        OPENCLAW_SLIM_MODE: "1",
+        OPENCLAW_GATEWAY_TOKEN: "gateway-token",
+        TELEGRAM_BOT_TOKEN: "telegram-token",
+        TELEGRAM_ALLOW_FROM: "123456789",
+        RAILWAY_STATIC_URL: "openclaw-telegram.up.railway.app",
+      },
+      templateAgentsDefaults: {
+        maxConcurrent: 4,
+        subagents: {
+          maxConcurrent: 8,
+        },
+      },
+      templateTelegram: {
+        enabled: true,
+        dmPolicy: "allowlist",
+        botToken: "${TELEGRAM_BOT_TOKEN}",
+        allowFrom: "__TELEGRAM_ALLOW_FROM__",
+      },
+    }) as {
+      browser?: { enabled?: boolean };
+      approvals?: { exec?: { enabled?: boolean } };
+      canvasHost?: { enabled?: boolean };
+      acp?: { enabled?: boolean; dispatch?: { enabled?: boolean } };
+      agents?: { defaults?: { maxConcurrent?: number; subagents?: { maxConcurrent?: number } } };
+      channels?: Record<string, { enabled?: boolean; dmPolicy?: string; allowFrom?: unknown }>;
+      plugins?: {
+        enabled?: boolean;
+        allow?: unknown;
+        slots?: { memory?: string };
+        entries?: Record<string, { enabled?: boolean }>;
+      };
+      gateway?: { controlUi?: { allowedOrigins?: unknown } };
+    };
+
+    expect(nextConfig.browser?.enabled).toBe(false);
+    expect(nextConfig.approvals?.exec?.enabled).toBe(false);
+    expect(nextConfig.canvasHost?.enabled).toBe(false);
+    expect(nextConfig.acp?.enabled).toBe(false);
+    expect(nextConfig.acp?.dispatch?.enabled ?? false).toBe(false);
+    expect(nextConfig.agents?.defaults?.maxConcurrent).toBe(4);
+    expect(nextConfig.agents?.defaults?.subagents?.maxConcurrent).toBe(8);
+    expect(nextConfig.channels?.telegram?.enabled).toBe(true);
+    expect(nextConfig.channels?.telegram?.dmPolicy).toBe("allowlist");
+    expect(nextConfig.channels?.telegram?.allowFrom).toEqual(["123456789"]);
+    expect(nextConfig.plugins?.enabled).toBe(true);
+    expect(nextConfig.plugins?.allow).toEqual(["telegram"]);
+    expect(nextConfig.plugins?.slots?.memory).toBe("none");
+    expect(nextConfig.plugins?.entries?.telegram?.enabled).toBe(true);
+    expect(nextConfig.plugins?.entries?.acpx?.enabled).toBe(false);
+    expect(nextConfig.gateway?.controlUi?.allowedOrigins).toEqual([
+      "https://openclaw-telegram.up.railway.app",
+    ]);
+  });
+});
+
+describe("docker-entrypoint slim mode validation", () => {
+  it("fails fast when slim mode is enabled without a bootstrap channel", () => {
+    const result = runEntrypointPrelude({
+      env: {
+        OPENCLAW_SLIM_MODE: "1",
+        OPENCLAW_CONFIG_TEMPLATE: path.join(process.cwd(), "config/openclaw.railway.template.json"),
+        OPENCLAW_HOME: mkdtempSync(path.join(os.tmpdir(), "openclaw-slim-mode-test-")),
+      },
+      input: "bootstrap_config",
+    });
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain(
+      "OPENCLAW_SLIM_MODE requires OPENCLAW_BOOTSTRAP_CHANNEL to select a single channel.",
+    );
   });
 });
 
