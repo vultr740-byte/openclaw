@@ -219,6 +219,9 @@ describe("buildAgentSystemPrompt", () => {
     expect(prompt).toContain("compress the user's request into a few core keywords");
     expect(prompt).toContain("Prefer short, specific search terms");
     expect(prompt).toContain("ClawHub remains a legacy fallback");
+    expect(prompt).toContain("If one local skill attempt fails, hangs, times out");
+    expect(prompt).toContain("continue with the next best local or remote match");
+    expect(prompt).toContain("exclude the skill you just tried");
   });
 
   it("guides runtime completion events without exposing internal metadata", () => {
@@ -488,6 +491,18 @@ describe("buildAgentSystemPrompt", () => {
       "Scan `<available_skills>` for a domain-specific or task-specific skill first.",
     );
     expect(prompt).toContain("before generic tools like `web_fetch`");
+    expect(prompt).toContain("For any task where you seem blocked by missing domain knowledge");
+    expect(prompt).toContain("Before telling the user you cannot do it");
+    expect(prompt).toContain(
+      "task goal, domain, capability, command name, or a compressed problem statement",
+    );
+    expect(prompt).toContain("recoverable tool failures, unsupported-domain responses");
+    expect(prompt).toContain(
+      "run `skills_search` with the URL, domain, or a compressed domain-specific query",
+    );
+    expect(prompt).toContain("use `skillhub` to install that skill");
+    expect(prompt).toContain("blocked previews, or SSRF/network guards");
+    expect(prompt).toContain("exclude the skill you already tried");
   });
 
   it("appends available skills when provided", () => {

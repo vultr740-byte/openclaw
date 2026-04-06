@@ -8,7 +8,7 @@ import {
   type SkillEntry,
 } from "../skills.js";
 import type { AnyAgentTool } from "./common.js";
-import { jsonResult, readNumberParam, readStringParam } from "./common.js";
+import { jsonResult, readNumberParam, readStringArrayParam, readStringParam } from "./common.js";
 import { searchSkillhubMatches, type SkillhubSearchMatch } from "./skillhub-tool.js";
 
 const SKILLS_SEARCH_SCOPES = ["auto", "local", "remote"] as const;
@@ -17,6 +17,14 @@ const SkillsSearchSchema = Type.Object({
   query: Type.String({
     description: "Capability, domain, or URL to match against available skills.",
   }),
+  exclude: Type.Optional(
+    Type.Array(
+      Type.String({
+        description:
+          "Installed skill names, slash commands, or remote slugs to skip when retrying after a failed attempt.",
+      }),
+    ),
+  ),
   scope: optionalStringEnum(SKILLS_SEARCH_SCOPES, {
     description:
       "Search scope. auto searches installed skills first and also checks remote SkillHub results.",
@@ -70,6 +78,24 @@ type RemoteSkillMatch = {
 };
 
 type UnifiedSkillMatch = ScoredSkillMatch | RemoteSkillMatch;
+
+type SkillsSearchNextAction =
+  | {
+      type: "read_local_skill";
+      skillName: string;
+      path: string;
+      command?: string;
+    }
+  | {
+      type: "install_remote_skill";
+      skillName: string;
+      slug: string;
+      version?: string;
+    }
+  | {
+      type: "refine_search";
+      hint: string;
+    };
 
 type SkillsSearchScope = (typeof SKILLS_SEARCH_SCOPES)[number];
 
@@ -358,6 +384,37 @@ function buildQueryTerms(query: string, domainHints: DomainHints): string[] {
   return [...unique];
 }
 
+function normalizeExcludedTerms(values: string[] | undefined): Set<string> {
+  const normalized = new Set<string>();
+  for (const value of values ?? []) {
+    const trimmed = value.trim().toLowerCase();
+    if (!trimmed) {
+      continue;
+    }
+    normalized.add(trimmed);
+  }
+  return normalized;
+}
+
+function isExcludedLocalMatch(match: ScoredSkillMatch, excluded: Set<string>): boolean {
+  if (excluded.size === 0) {
+    return false;
+  }
+  return (
+    excluded.has(match.name.trim().toLowerCase()) ||
+    Boolean(match.command && excluded.has(match.command.trim().toLowerCase()))
+  );
+}
+
+function isExcludedRemoteMatch(match: RemoteSkillMatch, excluded: Set<string>): boolean {
+  if (excluded.size === 0) {
+    return false;
+  }
+  return (
+    excluded.has(match.slug.trim().toLowerCase()) || excluded.has(match.name.trim().toLowerCase())
+  );
+}
+
 function buildLocalMatches(params: {
   workspaceDir: string;
   config?: OpenClawConfig;
@@ -528,6 +585,36 @@ function resolveRemoteSearchState(params: {
   return { searchedRemote: false, remoteSkippedReason: "not_requested" };
 }
 
+function buildNextAction(params: {
+  query: string;
+  recommendedSource: "local" | "remote" | "none";
+  localMatches: ScoredSkillMatch[];
+  remoteMatches: RemoteSkillMatch[];
+}): SkillsSearchNextAction {
+  if (params.recommendedSource === "local" && params.localMatches[0]) {
+    const first = params.localMatches[0];
+    return {
+      type: "read_local_skill",
+      skillName: first.name,
+      path: first.path,
+      ...(first.command ? { command: first.command } : {}),
+    };
+  }
+  if (params.recommendedSource === "remote" && params.remoteMatches[0]) {
+    const first = params.remoteMatches[0];
+    return {
+      type: "install_remote_skill",
+      skillName: first.name,
+      slug: first.slug,
+      ...(first.version ? { version: first.version } : {}),
+    };
+  }
+  return {
+    type: "refine_search",
+    hint: "Try one narrower query using the exact task goal, domain, command name, or URL host before concluding no matching skill exists.",
+  };
+}
+
 export function createSkillsSearchTool(options: {
   workspaceDir: string;
   config?: OpenClawConfig;
@@ -546,6 +633,7 @@ export function createSkillsSearchTool(options: {
     execute: async (_toolCallId, args) => {
       const params = args as Record<string, unknown>;
       const query = readStringParam(params, "query", { required: true });
+      const excluded = normalizeExcludedTerms(readStringArrayParam(params, "exclude"));
       const scope = normalizeSearchScope(readStringParam(params, "scope"));
       const requestedLimit = readNumberParam(params, "limit", { integer: true });
       const limit = clampMatchLimit(requestedLimit);
@@ -573,15 +661,21 @@ export function createSkillsSearchTool(options: {
           remoteError = error instanceof Error ? error.message : String(error);
         }
       }
+      const filteredLocalMatches = localResult.matches.filter(
+        (match) => !isExcludedLocalMatch(match, excluded),
+      );
+      const filteredRemoteMatches = remoteMatches.filter(
+        (match) => !isExcludedRemoteMatch(match, excluded),
+      );
       const recommendedSource = resolveRecommendedSource({
         query,
-        localMatches: localResult.matches,
-        remoteMatches,
+        localMatches: filteredLocalMatches,
+        remoteMatches: filteredRemoteMatches,
       });
       const matches = combineMatches({
         recommendedSource,
-        localMatches: localResult.matches,
-        remoteMatches,
+        localMatches: filteredLocalMatches,
+        remoteMatches: filteredRemoteMatches,
         limit,
       });
       const remoteState = resolveRemoteSearchState({
@@ -590,21 +684,29 @@ export function createSkillsSearchTool(options: {
         remoteMatches,
         remoteError,
       });
+      const nextAction = buildNextAction({
+        query,
+        recommendedSource,
+        localMatches: filteredLocalMatches,
+        remoteMatches: filteredRemoteMatches,
+      });
 
       return jsonResult({
         query,
+        exclude: excluded.size > 0 ? [...excluded] : undefined,
         scope,
         limit,
         ...(scope !== "remote" ? { totalSkills: localResult.totalSkills } : {}),
         matchCount: matches.length,
-        localMatchCount: localResult.matchCount,
-        remoteMatchCount: remoteMatches.length,
+        localMatchCount: filteredLocalMatches.length,
+        remoteMatchCount: filteredRemoteMatches.length,
         remoteProvider: scope !== "local" ? "skillhub" : undefined,
         remoteError,
         ...remoteState,
         recommendedSource,
-        localMatches: localResult.matches,
-        remoteMatches,
+        nextAction,
+        localMatches: filteredLocalMatches,
+        remoteMatches: filteredRemoteMatches,
         matches,
       });
     },

@@ -28,10 +28,19 @@ function buildSkillsSection(params: { skillsPrompt?: string; readToolName: strin
     "- For skill discovery requests, use `skills_search` first. In auto mode it checks installed skills and also queries remote SkillHub results when needed.",
     "- Before searching, quickly compress the user's request into a few core keywords. Prefer short, specific search terms over long sentences or loose brainstormed word lists.",
     "- If the first search is too broad or misses, try one more phrasing that is closer to the user's actual goal before concluding no good skill exists.",
+    "For any task where you seem blocked by missing domain knowledge, missing tool coverage, or a recoverable tool failure:",
+    "- Before telling the user you cannot do it, scan `<available_skills>` again for a relevant local skill.",
+    "- If no installed skill clearly fits, run `skills_search` with the task goal, domain, capability, command name, or a compressed problem statement.",
+    "- If `skills_search` returns a strong remote-only match, use `skillhub` to install it and retry through that skill before giving up.",
+    "- If one local skill attempt fails, hangs, times out, or returns an unsupported-domain result, do not stop there: run `skills_search` again with a tighter query, exclude the skill you just tried, and continue with the next best local or remote match.",
+    "- Treat recoverable tool failures, unsupported-domain responses, or tool results that recommend checking `<available_skills>` / `find_matching_skill` as a cue to continue the skill path.",
     "When a message includes URLs or link-dependent tasks:",
     "- Scan `<available_skills>` for a domain-specific or task-specific skill first.",
     "- If a matching skill exists, use that skill before generic tools like `web_fetch`.",
-    "- If generic fetch/search fails (for example login walls, anti-bot pages, blocked previews), retry via a matching skill before asking the user to paste content.",
+    "- If no installed skill clearly matches, run `skills_search` with the URL, domain, or a compressed domain-specific query before concluding no skill exists.",
+    "- If `skills_search` returns a strong remote-only match, use `skillhub` to install that skill, then retry with it before asking the user to paste content.",
+    "- If the first local URL skill hangs or fails to extract content, continue to another matching local skill or a remote SkillHub match before asking the user to paste content; when retrying `skills_search`, exclude the skill you already tried.",
+    "- If generic fetch/search fails (for example login walls, anti-bot pages, blocked previews, or SSRF/network guards), treat that as a cue to continue the skill path rather than stopping after one local scan.",
   ].join("\n");
   const combinedPrompt = `${trimmed}\n\n${skillSelectionDefaults}`.trim();
   return [

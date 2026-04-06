@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { Type } from "@sinclair/typebox";
 import type { OpenClawConfig } from "../../config/config.js";
+import { installPackageDirWithManifestDeps } from "../../infra/install-package-dir.js";
 import { assertCanonicalPathWithinBase } from "../../infra/install-safe-path.js";
 import { fetchWithSsrFGuard } from "../../infra/net/fetch-guard.js";
 import type { SsrFPolicy } from "../../infra/net/ssrf.js";
@@ -128,6 +129,10 @@ type SkillHubInstallMetadata = {
   homepage?: string;
   downloadUrl: string;
   skillDir: string;
+};
+
+type SkillPackageManifest = {
+  dependencies?: Record<string, unknown>;
 };
 
 function validateSkillSlug(slugRaw: string): string {
@@ -389,6 +394,45 @@ async function publishInstalledSkillDir(params: {
   }
 }
 
+function isObjectRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+async function readSkillManifestDependencies(
+  extractedDir: string,
+): Promise<Record<string, unknown> | undefined> {
+  const manifestPath = path.join(extractedDir, "package.json");
+  let manifestRaw = "";
+  try {
+    manifestRaw = await fs.readFile(manifestPath, "utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException)?.code === "ENOENT") {
+      return undefined;
+    }
+    throw error;
+  }
+
+  let manifest: SkillPackageManifest;
+  try {
+    manifest = JSON.parse(manifestRaw) as SkillPackageManifest;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`Invalid skill package.json: ${message}`, { cause: error });
+  }
+
+  if (!isObjectRecord(manifest)) {
+    throw new Error("Invalid skill package.json: manifest must be an object");
+  }
+  if (!isObjectRecord(manifest.dependencies)) {
+    return undefined;
+  }
+
+  const dependencies = Object.fromEntries(
+    Object.entries(manifest.dependencies).filter(([key]) => key.trim().length > 0),
+  );
+  return Object.keys(dependencies).length > 0 ? dependencies : undefined;
+}
+
 async function installSkillArchive(params: {
   workspaceDir: string;
   slug: string;
@@ -451,11 +495,27 @@ async function installSkillArchive(params: {
     } catch {
       throw new Error("Downloaded archive does not look like a skill package");
     }
+    const manifestDependencies = await readSkillManifestDependencies(extractTarget);
     await fs.mkdir(path.dirname(skillDir), { recursive: true });
-    await publishInstalledSkillDir({
-      extractedDir: extractTarget,
-      skillDir,
-    });
+    if (manifestDependencies) {
+      const installResult = await installPackageDirWithManifestDeps({
+        sourceDir: extractTarget,
+        targetDir: skillDir,
+        mode: "install",
+        timeoutMs: Math.max(params.timeoutMs, 300_000),
+        copyErrorPrefix: `failed to publish installed skill "${params.slug}"`,
+        depsLogMessage: `Installing dependencies for skill "${params.slug}"…`,
+        manifestDependencies,
+      });
+      if (!installResult.ok) {
+        throw new Error(installResult.error);
+      }
+    } else {
+      await publishInstalledSkillDir({
+        extractedDir: extractTarget,
+        skillDir,
+      });
+    }
     return skillDir;
   } finally {
     await fs.rm(stagingDir, { recursive: true, force: true }).catch(() => undefined);

@@ -6,9 +6,15 @@ import type { OpenClawConfig } from "../../config/config.js";
 
 const fetchWithSsrFGuardMock = vi.fn();
 const extractArchiveMock = vi.fn();
+const installPackageDirWithManifestDepsMock = vi.fn();
 
 vi.mock("../../infra/net/fetch-guard.js", () => ({
   fetchWithSsrFGuard: (...args: unknown[]) => fetchWithSsrFGuardMock(...args),
+}));
+
+vi.mock("../../infra/install-package-dir.js", () => ({
+  installPackageDirWithManifestDeps: (...args: unknown[]) =>
+    installPackageDirWithManifestDepsMock(...args),
 }));
 
 vi.mock("../skills-install-extract.js", () => ({
@@ -33,9 +39,23 @@ async function writeExtractedSkill(targetDir: string, slug = "calendar") {
   await fs.writeFile(path.join(targetDir, "_meta.json"), JSON.stringify({ slug }), "utf8");
 }
 
+async function writeExtractedSkillWithDependencies(targetDir: string, slug = "calendar") {
+  await writeExtractedSkill(targetDir, slug);
+  await fs.writeFile(
+    path.join(targetDir, "package.json"),
+    JSON.stringify({
+      dependencies: {
+        dayjs: "^1.11.19",
+      },
+    }),
+    "utf8",
+  );
+}
+
 describe("skillhub tool", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    installPackageDirWithManifestDepsMock.mockResolvedValue({ ok: true });
   });
 
   afterEach(() => {
@@ -188,9 +208,96 @@ describe("skillhub tool", () => {
       expect(details.installed).toBe(true);
       expect(details.skill?.slug).toBe("calendar");
       expect(details.skill?.version).toBe("1.0.0");
+      expect(installPackageDirWithManifestDepsMock).not.toHaveBeenCalled();
       await expect(
         fs.readFile(path.join(workspaceDir, "skills", "calendar", "SKILL.md"), "utf8"),
       ).resolves.toContain("name: calendar");
+    } finally {
+      await fs.rm(workspaceDir, { recursive: true, force: true });
+    }
+  });
+
+  it("installs manifest dependencies for remote skills that ship a package.json", async () => {
+    const { createSkillhubTool } = await import("./skillhub-tool.js");
+    const workspaceDir = await createWorkspace();
+    try {
+      fetchWithSsrFGuardMock
+        .mockResolvedValueOnce({
+          response: new Response(
+            JSON.stringify({
+              latestVersion: {
+                version: "1.0.1",
+              },
+              skill: {
+                slug: "wechat-article-extractor-skill",
+                displayName: "微信公众号文章解析",
+                summary: "Extract metadata and content from WeChat articles.",
+              },
+            }),
+            { status: 200, headers: { "content-type": "application/json" } },
+          ),
+          finalUrl: "https://example.com/skills/wechat-article-extractor-skill",
+          release: vi.fn(async () => {}),
+        })
+        .mockResolvedValueOnce({
+          response: new Response(Buffer.from("zip-bytes"), {
+            status: 200,
+            headers: { "content-type": "application/zip" },
+          }),
+          finalUrl: "https://example.com/download?slug=wechat-article-extractor-skill",
+          release: vi.fn(async () => {}),
+        });
+
+      extractArchiveMock.mockImplementationOnce(async ({ targetDir }: { targetDir: string }) => {
+        await writeExtractedSkillWithDependencies(targetDir, "wechat-article-extractor-skill");
+        return { stdout: "", stderr: "", code: 0 };
+      });
+
+      installPackageDirWithManifestDepsMock.mockImplementationOnce(
+        async ({ sourceDir, targetDir }: { sourceDir: string; targetDir: string }) => {
+          await fs.cp(sourceDir, targetDir, { recursive: true });
+          return { ok: true };
+        },
+      );
+
+      const tool = createSkillhubTool({
+        workspaceDir,
+        config: asConfig({
+          skills: {
+            hub: {
+              detailUrlTemplate: "https://example.com/skills/{slug}",
+              primaryDownloadUrlTemplate: "https://example.com/download?slug={slug}",
+            },
+          },
+        }),
+      });
+      const result = await tool.execute("call-install-deps", {
+        action: "install",
+        slug: "wechat-article-extractor-skill",
+      });
+      const details = result.details as {
+        installed?: boolean;
+        skill?: { slug?: string; version?: string };
+      };
+
+      expect(details.installed).toBe(true);
+      expect(details.skill?.slug).toBe("wechat-article-extractor-skill");
+      expect(details.skill?.version).toBe("1.0.1");
+      expect(installPackageDirWithManifestDepsMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          targetDir: path.join(workspaceDir, "skills", "wechat-article-extractor-skill"),
+          mode: "install",
+          manifestDependencies: {
+            dayjs: "^1.11.19",
+          },
+        }),
+      );
+      await expect(
+        fs.readFile(
+          path.join(workspaceDir, "skills", "wechat-article-extractor-skill", "package.json"),
+          "utf8",
+        ),
+      ).resolves.toContain('"dayjs"');
     } finally {
       await fs.rm(workspaceDir, { recursive: true, force: true });
     }

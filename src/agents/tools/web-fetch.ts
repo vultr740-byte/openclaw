@@ -311,7 +311,13 @@ function maybeAppendSkillRetryHint(
   context?: { url?: string },
 ): ToolExecutionError | Error {
   if (error instanceof SsrFBlockedError) {
-    return error;
+    const message = error.message.trim();
+    return createStructuredWebFetchError({
+      message: message || "Web fetch was blocked by SSRF/network policy.",
+      errorCode: "fetch_failed",
+      url: context?.url,
+      details: { blocked_by_policy: true },
+    });
   }
   if (isToolExecutionError(error)) {
     if (error.message.includes("<available_skills>") && error.toolErrorDetails.recommendation) {

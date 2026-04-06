@@ -1,9 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as ssrf from "../../infra/net/ssrf.js";
 import { type FetchMock, withFetchPreconnect } from "../../test-utils/fetch-mock.js";
+import { isToolExecutionError } from "./common.js";
 
 const lookupMock = vi.fn();
-const resolvePinnedHostname = ssrf.resolvePinnedHostname;
+const resolvePinnedHostnameWithPolicy = ssrf.resolvePinnedHostnameWithPolicy;
 
 function makeHeaders(map: Record<string, string>): { get: (key: string) => string | null } {
   return {
@@ -67,8 +68,11 @@ describe("web_fetch SSRF protection", () => {
   const priorFetch = global.fetch;
 
   beforeEach(() => {
-    vi.spyOn(ssrf, "resolvePinnedHostname").mockImplementation((hostname) =>
-      resolvePinnedHostname(hostname, lookupMock),
+    vi.spyOn(ssrf, "resolvePinnedHostnameWithPolicy").mockImplementation((hostname, params) =>
+      resolvePinnedHostnameWithPolicy(hostname, {
+        ...params,
+        lookupFn: lookupMock,
+      }),
     );
   });
 
@@ -114,6 +118,32 @@ describe("web_fetch SSRF protection", () => {
 
     await expectBlockedUrl(tool, "https://private.test/resource", /private|internal|blocked/i);
     expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("wraps SSRF blocks with recoverable skill-fallback metadata", async () => {
+    lookupMock.mockResolvedValue([{ address: "10.0.0.5", family: 4 }]);
+
+    const tool = await createWebFetchToolForTest();
+    let thrown: unknown;
+    try {
+      await tool?.execute?.("call", { url: "https://mp.weixin.qq.com/s/test" });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(isToolExecutionError(thrown)).toBe(true);
+    if (!isToolExecutionError(thrown)) {
+      throw new Error("expected ToolExecutionError");
+    }
+    expect(thrown.message).toContain("<available_skills>");
+    expect(thrown.toolErrorDetails).toMatchObject({
+      error_code: "fetch_failed",
+      recoverable: true,
+      recommended_action: "find_matching_skill",
+      domain: "mp.weixin.qq.com",
+      failed_url: "https://mp.weixin.qq.com/s/test",
+      blocked_by_policy: true,
+    });
   });
 
   it("blocks redirects to private hosts", async () => {

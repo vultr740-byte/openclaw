@@ -185,6 +185,7 @@ describe("skills_search tool", () => {
         recommendedSource?: string;
         searchedRemote?: boolean;
         remoteMatchCount?: number;
+        nextAction?: { type?: string; slug?: string; skillName?: string };
         matches?: Array<{ source?: string; slug?: string; name?: string }>;
       };
 
@@ -192,6 +193,9 @@ describe("skills_search tool", () => {
       expect(details.searchedRemote).toBe(true);
       expect(details.recommendedSource).toBe("remote");
       expect(details.remoteMatchCount).toBe(1);
+      expect(details.nextAction?.type).toBe("install_remote_skill");
+      expect(details.nextAction?.slug).toBe("wechat-article-reader");
+      expect(details.nextAction?.skillName).toBe("微信公众号文章导出");
       expect(details.matches?.[0]?.source).toBe("remote");
       expect(details.matches?.[0]?.slug).toBe("wechat-article-reader");
       expect(remoteSearch).toHaveBeenCalledWith({
@@ -292,6 +296,7 @@ describe("skills_search tool", () => {
         totalSkills?: number;
         localMatchCount?: number;
         remoteMatchCount?: number;
+        nextAction?: { type?: string; slug?: string; skillName?: string };
         matches?: Array<{ source?: string; slug?: string }>;
       };
 
@@ -300,8 +305,118 @@ describe("skills_search tool", () => {
       expect(details.totalSkills).toBeUndefined();
       expect(details.localMatchCount).toBe(0);
       expect(details.remoteMatchCount).toBe(1);
+      expect(details.nextAction?.type).toBe("install_remote_skill");
+      expect(details.nextAction?.slug).toBe("wechat-reader");
+      expect(details.nextAction?.skillName).toBe("WeChat Article Reader");
       expect(details.matches?.[0]?.source).toBe("remote");
       expect(details.matches?.[0]?.slug).toBe("wechat-reader");
+    } finally {
+      await cleanupWorkspace(paths);
+    }
+  });
+
+  it("returns a nextAction for the best local match", async () => {
+    const paths = await createWorkspace();
+    try {
+      await writeSkill({
+        dir: path.join(paths.workspaceDir, "skills", "jina-reader"),
+        name: "jina-reader",
+        description: "Read web pages and PDFs into LLM-friendly text.",
+      });
+
+      const tool = createSkillsSearchTool({ workspaceDir: paths.workspaceDir });
+      const result = await tool.execute("call-local-next-action", {
+        query: "read webpage content",
+        scope: "local",
+      });
+      const details = result.details as {
+        recommendedSource?: string;
+        nextAction?: { type?: string; skillName?: string; path?: string; command?: string };
+      };
+
+      expect(details.recommendedSource).toBe("local");
+      expect(details.nextAction?.type).toBe("read_local_skill");
+      expect(details.nextAction?.skillName).toBe("jina-reader");
+      expect(details.nextAction?.path).toContain("/skills/jina-reader/SKILL.md");
+      expect(details.nextAction?.command).toBe("/jina_reader");
+    } finally {
+      await cleanupWorkspace(paths);
+    }
+  });
+
+  it("supports excluding previously tried local skills so retries can advance", async () => {
+    const paths = await createWorkspace();
+    try {
+      await writeSkill({
+        dir: path.join(paths.workspaceDir, "skills", "jina-reader"),
+        name: "jina-reader",
+        description: "Read web pages and PDFs into LLM-friendly text.",
+      });
+      await writeSkill({
+        dir: path.join(paths.workspaceDir, "skills", "summarize"),
+        name: "summarize",
+        description: "Summarize arbitrary content and URLs.",
+      });
+
+      const tool = createSkillsSearchTool({ workspaceDir: paths.workspaceDir });
+      const result = await tool.execute("call-local-exclude", {
+        query: "read webpage content",
+        scope: "local",
+        exclude: ["jina-reader", "/jina_reader"],
+      });
+      const details = result.details as {
+        exclude?: string[];
+        localMatches?: Array<{ name?: string }>;
+        nextAction?: { type?: string; skillName?: string };
+      };
+
+      expect(details.exclude).toContain("jina-reader");
+      expect(details.localMatches?.some((match) => match.name === "jina-reader")).toBe(false);
+      expect(details.nextAction?.type).toBe("read_local_skill");
+      expect(details.nextAction?.skillName).toBe("summarize");
+    } finally {
+      await cleanupWorkspace(paths);
+    }
+  });
+
+  it("supports excluding previously tried remote skills so retries can advance", async () => {
+    const paths = await createWorkspace();
+    try {
+      const remoteSearch = vi
+        .fn<(params: { query: string; limit: number }) => Promise<SkillhubSearchMatch[]>>()
+        .mockResolvedValue([
+          {
+            slug: "wechat-reader",
+            name: "WeChat Article Reader",
+            summary: "Read WeChat public account articles.",
+            version: "1.0.0",
+          },
+          {
+            slug: "wechat-exporter",
+            name: "WeChat Article Exporter",
+            summary: "Export WeChat public account articles.",
+            version: "1.1.0",
+          },
+        ]);
+
+      const tool = createSkillsSearchTool({
+        workspaceDir: paths.workspaceDir,
+        remoteSearch,
+      });
+      const result = await tool.execute("call-remote-exclude", {
+        query: "wechat article",
+        scope: "remote",
+        exclude: ["wechat-reader"],
+      });
+      const details = result.details as {
+        remoteMatches?: Array<{ slug?: string }>;
+        nextAction?: { type?: string; slug?: string; skillName?: string };
+      };
+
+      expect(details.remoteMatches?.some((match) => match.slug === "wechat-reader")).toBe(false);
+      expect(details.nextAction?.type).toBe("install_remote_skill");
+      expect(details.nextAction?.slug).toBe("wechat-exporter");
+      expect(details.nextAction?.skillName).toBe("WeChat Article Exporter");
     } finally {
       await cleanupWorkspace(paths);
     }
