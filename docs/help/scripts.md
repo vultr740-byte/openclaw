@@ -22,6 +22,12 @@ Use these when a task is clearly tied to a script; otherwise prefer the CLI.
 Auth monitoring scripts are documented here:
 [/automation/auth-monitoring](/automation/auth-monitoring)
 
+## Local agent debug helper
+
+The repo includes `scripts/local-agent-debug.sh` for a repeatable local agent
+debug loop. It is documented here:
+[/help/debugging#local-agent-debug-loop](/help/debugging#local-agent-debug-loop)
+
 ## When adding scripts
 
 - Keep scripts focused and documented.

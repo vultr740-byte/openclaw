@@ -104,6 +104,63 @@ Tip: if a non‑dev gateway is already running (launchd/systemd), stop it first:
 openclaw gateway stop
 ```
 
+## Local agent debug loop
+
+For local agent debugging, prefer the repo helper instead of assembling ad hoc
+commands each time:
+
+```bash
+./scripts/local-agent-debug.sh serve
+```
+
+This script reuses the built-in dev profile under `~/.openclaw-dev`, mirrors
+the current model/provider/auth setup from your main profile, and keeps channel
+providers disabled so you can focus on agent behavior.
+
+Open a second terminal for validation commands:
+
+```bash
+./scripts/local-agent-debug.sh status
+./scripts/local-agent-debug.sh smoke
+./scripts/local-agent-debug.sh send "Reply with exactly: LOCAL_OK"
+./scripts/local-agent-debug.sh send-fresh "Reply with exactly: FRESH_OK"
+./scripts/local-agent-debug.sh tui
+./scripts/local-agent-debug.sh stop
+```
+
+Recommended workflow:
+
+1. Terminal A: run `./scripts/local-agent-debug.sh serve`
+2. Terminal B: run `./scripts/local-agent-debug.sh smoke`
+3. Terminal B: run one extra `send` prompt for the specific code path you are changing
+   - Use `send-fresh` when you need a cold-start validation that does not reuse the main dev session
+4. Terminal B: use `./scripts/local-agent-debug.sh tui` if you want an interactive session
+
+What `smoke` verifies:
+
+- Turn 1: exact reply matching
+- Turn 2: session memory write
+- Turn 3: session memory recall
+- Same `sessionId` across all three turns
+
+That gives you a repeatable proof that the local Gateway, agent execution, and
+session continuity are all working before you trust a code change.
+
+What `send-fresh` verifies:
+
+- Forces a fresh explicit session key instead of reusing `agent:dev:main`
+- Useful for validating first-turn behavior such as tool selection, remote skill
+  installation, and fallback logic
+- Avoids false positives caused by prior session memory
+
+Notes:
+
+- The script reads the source profile from `~/.openclaw` by default.
+- Override the source state directory with
+  `OPENCLAW_DEBUG_SOURCE_STATE_DIR=/path/to/state`.
+- Logs are written to `~/.openclaw-dev/local-agent-debug.gateway.log`.
+- `stop` terminates the local listener on the dev gateway port.
+
 ## Raw stream logging (OpenClaw)
 
 OpenClaw can log the **raw assistant stream** before any filtering/formatting.
