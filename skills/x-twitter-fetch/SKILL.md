@@ -1,20 +1,22 @@
 ---
 name: x-twitter-fetch
-description: Fetch X/Twitter data via twitter-viewer.com (timelines + pagination) and FxEmbed (single tweet / X Article extraction). Supports JSON output and optional Markdown extraction/translation.
+description: Fetch X/Twitter posts, thread context, X Articles, and user timelines via public no-key endpoints. Supports direct X/Twitter status URLs, best-effort conversation extraction, JSON output, and optional Markdown translation.
 ---
 
 # X/Twitter Fetch
 
-This skill provides two ways to fetch X/Twitter data:
+This skill provides public no-key ways to fetch X/Twitter data:
 
 1. **r.jina.ai** as primary timeline snapshot source (best-effort readable timeline).
 2. **twitter-viewer.com** for cursor-based timeline pagination.
 3. **FxEmbed (api.fxtwitter.com)** for a single tweet, often with X Article metadata/blocks.
+4. **r.jina.ai status snapshots** for best-effort public thread / conversation context.
 
 ## Choose an API
 
 - **Need a list / timeline / pagination?** Use `scripts/fetch_user_tweets.py` (default provider order: `jina,twitter-viewer`).
-- **Need one tweet / X Article extraction?** Use `scripts/fetch_tweet.py` (FxEmbed).
+- **Need one tweet / X Article extraction?** Use `scripts/fetch_tweet.py`.
+- **Need best-effort thread context for a direct post URL?** Use `scripts/fetch_tweet.py --extract conversation`.
 
 ### Mandatory routing rules
 
@@ -33,6 +35,20 @@ For single post fetch, the script now retries sources in this order (unless over
 3. `vx` (`api.vxtwitter.com`)
 
 Each attempt is recorded in the output `attempts` array.
+
+### Best-effort conversation mode
+
+For a direct post URL, `fetch_tweet.py` also supports a public thread-context mode:
+
+```bash
+python3 scripts/fetch_tweet.py --url 'https://x.com/<user>/status/<tweetId>' --extract conversation
+```
+
+Notes:
+
+- This uses `r.jina.ai/http://x.com/.../status/...` and extracts the readable `Post` / `Conversation` sections when available.
+- It is best-effort only. Some public status pages degrade to login-wall content or incomplete snapshots.
+- Use this when the user wants surrounding thread context, not just the single post body.
 
 ## User timeline
 
@@ -92,6 +108,12 @@ Recommended first attempt for direct links:
 python3 scripts/fetch_tweet.py --url 'https://x.com/<user>/status/<tweetId>' --extract all --pretty
 ```
 
+If the user needs thread context, try:
+
+```bash
+python3 scripts/fetch_tweet.py --url 'https://x.com/<user>/status/<tweetId>' --extract conversation
+```
+
 If the first attempt fails, retry once with:
 
 ```bash
@@ -109,6 +131,7 @@ Extraction modes:
 - `--extract text` best-effort tweet text
 - `--extract article` article title + preview
 - `--extract article_full` render article blocks as Markdown
+- `--extract conversation` best-effort public post + conversation snapshot
 - `--extract all` text + (title + preview)
 
 Output options:

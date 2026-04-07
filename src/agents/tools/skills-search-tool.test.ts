@@ -129,6 +129,41 @@ describe("skills_search tool", () => {
     }
   });
 
+  it("matches x thread-reading queries to x-twitter-fetch", async () => {
+    const paths = await createWorkspace();
+    try {
+      await writeSkill({
+        dir: path.join(paths.workspaceDir, "skills", "x-twitter-fetch"),
+        name: "x-twitter-fetch",
+        description:
+          "Fetch X/Twitter posts, thread context, replies, and user timelines from direct status URLs.",
+      });
+      await writeSkill({
+        dir: path.join(paths.workspaceDir, "skills", "summarize"),
+        name: "summarize",
+        description: "Summarize arbitrary content and URLs.",
+      });
+
+      const tool = createSkillsSearchTool({ workspaceDir: paths.workspaceDir });
+      const result = await tool.execute("call-thread-query", {
+        query: "read X thread context and replies from a status URL",
+        scope: "local",
+      });
+      const details = result.details as {
+        matches?: Array<{ name?: string; command?: string }>;
+        nextAction?: { type?: string; skillName?: string; command?: string };
+      };
+
+      expect(details.matches?.[0]?.name).toBe("x-twitter-fetch");
+      expect(details.matches?.[0]?.command).toBe("/x_twitter_fetch");
+      expect(details.nextAction?.type).toBe("read_local_skill");
+      expect(details.nextAction?.skillName).toBe("x-twitter-fetch");
+      expect(details.nextAction?.command).toBe("/x_twitter_fetch");
+    } finally {
+      await cleanupWorkspace(paths);
+    }
+  });
+
   it("excludes skills disabled for model invocation", async () => {
     const paths = await createWorkspace();
     try {
@@ -262,6 +297,68 @@ describe("skills_search tool", () => {
         limit: 8,
         config: undefined,
       });
+    } finally {
+      await cleanupWorkspace(paths);
+    }
+  });
+
+  it("prefers a strong local domain skill over generic remote results in auto mode", async () => {
+    const paths = await createWorkspace();
+    try {
+      await writeSkill({
+        dir: path.join(paths.workspaceDir, "skills", "wechat-article-extractor"),
+        name: "wechat-article-extractor",
+        description:
+          "Extract metadata and content from WeChat Official Account articles on mp.weixin.qq.com.",
+      });
+      await writeSkill({
+        dir: path.join(paths.workspaceDir, "skills", "summarize"),
+        name: "summarize",
+        description: "Summarize arbitrary URLs and content.",
+      });
+
+      const remoteSearch = vi
+        .fn<(params: { query: string; limit: number }) => Promise<SkillhubSearchMatch[]>>()
+        .mockResolvedValue([
+          {
+            slug: "self-improving-agent",
+            name: "self-improving-agent",
+            summary:
+              "Captures learnings, errors, and corrections to enable continuous improvement.",
+            version: "3.0.6",
+            downloads: 100000,
+            stars: 2000,
+          },
+          {
+            slug: "find-skills",
+            name: "Find Skills",
+            summary: "Helps users discover and install agent skills.",
+            version: "0.1.0",
+            downloads: 90000,
+            stars: 500,
+          },
+        ]);
+
+      const tool = createSkillsSearchTool({
+        workspaceDir: paths.workspaceDir,
+        remoteSearch,
+      });
+      const result = await tool.execute("call-auto-local-wins", {
+        query: "https://mp.weixin.qq.com/s/2NUlZtRMbNHpBvgAe3__Qg",
+      });
+      const details = result.details as {
+        recommendedSource?: string;
+        nextAction?: { type?: string; skillName?: string };
+        localMatches?: Array<{ name?: string }>;
+        matches?: Array<{ source?: string; name?: string }>;
+      };
+
+      expect(details.recommendedSource).toBe("local");
+      expect(details.nextAction?.type).toBe("read_local_skill");
+      expect(details.nextAction?.skillName).toBe("wechat-article-extractor");
+      expect(details.localMatches?.[0]?.name).toBe("wechat-article-extractor");
+      expect(details.matches?.[0]?.source).toBe("local");
+      expect(details.matches?.[0]?.name).toBe("wechat-article-extractor");
     } finally {
       await cleanupWorkspace(paths);
     }

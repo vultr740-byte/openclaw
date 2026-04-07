@@ -22,8 +22,21 @@ from urllib import request
 DEFAULT_FX_BASE = "https://api.fxtwitter.com"
 DEFAULT_VX_BASE = "https://api.vxtwitter.com"
 DEFAULT_SYNDICATION_BASE = "https://cdn.syndication.twimg.com/tweet-result"
+DEFAULT_JINA_STATUS_BASE = "https://r.jina.ai/http://x.com"
 DEFAULT_PROVIDER_ORDER = "syndication,fx,vx"
 UA = "Mozilla/5.0 (twitter-fetch-skill; +https://github.com/FxEmbed/FxEmbed)"
+MARKDOWN_CONTENT_MARKER = "Markdown Content:"
+LOGIN_WALL_SNIPPETS = (
+    "Don't miss what's happening",
+    "Don’t miss what’s happening",
+    "People on X are the first to know.",
+)
+BOILERPLATE_HEADINGS = {
+    "New to X?",
+    "Trending now",
+    "What’s happening",
+    "What's happening",
+}
 
 STATUS_RE = re.compile(
     r"https?://(?:www\.)?(?:x\.com|twitter\.com)/(?P<user>[A-Za-z0-9_]+)/status/(?P<id>\d+)"
@@ -161,6 +174,25 @@ def _fetch_json(url: str, timeout: float) -> Tuple[int, dict[str, Any], str]:
     return status, payload, body
 
 
+def _fetch_text(url: str, timeout: float, accept: str = "text/plain") -> str:
+    req = request.Request(
+        url,
+        headers={
+            "User-Agent": UA,
+            "Accept": accept,
+        },
+        method="GET",
+    )
+    try:
+        with request.urlopen(req, timeout=timeout) as resp:
+            return resp.read().decode("utf-8", errors="replace")
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace") if exc.fp else str(exc)
+        raise FetchError(f"HTTP {exc.code}: {detail}".strip(), status=int(exc.code)) from exc
+    except Exception as exc:
+        raise FetchError(str(exc)) from exc
+
+
 def _coerce_dict(value: Any) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
 
@@ -171,6 +203,86 @@ def _coerce_str(value: Any) -> str:
 
 def _canonical_status_url(username: str, tweet_id: str) -> str:
     return f"https://x.com/{username}/status/{tweet_id}"
+
+
+def _build_jina_status_url(username: str, tweet_id: str, base_url: str) -> str:
+    return f"{base_url.rstrip('/')}/{username}/status/{tweet_id}"
+
+
+def _extract_markdown_body(markdown: str) -> str:
+    marker_index = markdown.find(MARKDOWN_CONTENT_MARKER)
+    if marker_index >= 0:
+        return markdown[marker_index + len(MARKDOWN_CONTENT_MARKER) :].strip()
+    return markdown.strip()
+
+
+def _extract_markdown_section(body: str, heading: str) -> str:
+    target = heading.strip().lower()
+    capture = False
+    collected: List[str] = []
+    for line in body.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("## "):
+            title = stripped[3:].strip()
+            if capture:
+                break
+            if title.lower() == target:
+                capture = True
+            continue
+        if capture:
+            collected.append(line)
+    return "\n".join(collected).strip()
+
+
+def _trim_markdown_boilerplate(body: str) -> str:
+    collected: List[str] = []
+    for line in body.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("## "):
+            title = stripped[3:].strip()
+            if title in BOILERPLATE_HEADINGS and collected:
+                break
+        collected.append(line)
+    return "\n".join(collected).strip()
+
+
+def _looks_like_login_wall(text: str) -> bool:
+    compact = " ".join(text.split())
+    if not compact:
+        return True
+    return len(compact) < 260 and any(snippet in compact for snippet in LOGIN_WALL_SNIPPETS)
+
+
+def _render_conversation_extract(
+    *,
+    username: str,
+    tweet_id: str,
+    args: argparse.Namespace,
+) -> Tuple[str, str]:
+    source_url = _build_jina_status_url(
+        username,
+        tweet_id,
+        _coerce_str(args.jina_status_base) or DEFAULT_JINA_STATUS_BASE,
+    )
+    raw_markdown = _fetch_text(source_url, args.timeout)
+    body = _extract_markdown_body(raw_markdown)
+    post_section = _extract_markdown_section(body, "Post")
+    conversation_section = _extract_markdown_section(body, "Conversation")
+
+    rendered_sections: List[str] = []
+    if post_section and post_section != conversation_section:
+        rendered_sections.append(f"## Post\n\n{post_section}")
+    if conversation_section:
+        rendered_sections.append(f"## Conversation\n\n{conversation_section}")
+
+    rendered = "\n\n".join(rendered_sections).strip()
+    if not rendered:
+        rendered = _trim_markdown_boilerplate(body)
+
+    if _looks_like_login_wall(rendered):
+        raise FetchError("Readable conversation snapshot is unavailable for this post")
+
+    return rendered.rstrip() + "\n", source_url
 
 
 def _parse_source_input(args: argparse.Namespace) -> Tuple[str, str]:
@@ -527,11 +639,13 @@ def main(argv: list[str]) -> int:
     p.add_argument("--lang", default="en", help="Language for syndication endpoint.")
     p.add_argument(
         "--extract",
-        choices=["text", "article", "article_full", "all"],
+        choices=["text", "article", "article_full", "all", "conversation"],
         help=(
             "Extract key content. "
             "text=best-effort tweet text; article=title+preview; "
-            "article_full=article blocks as Markdown; all=text + article title/preview."
+            "article_full=article blocks as Markdown; "
+            "conversation=best-effort public thread context via Jina snapshot; "
+            "all=text + article title/preview."
         ),
     )
     p.add_argument(
@@ -558,6 +672,11 @@ def main(argv: list[str]) -> int:
         default=None,
         help="Translate extracted Markdown and write a translated .<lang>.md file.",
     )
+    p.add_argument(
+        "--jina-status-base",
+        default=DEFAULT_JINA_STATUS_BASE,
+        help="Base URL for best-effort status/conversation snapshots.",
+    )
     args = p.parse_args(argv)
 
     try:
@@ -565,6 +684,36 @@ def main(argv: list[str]) -> int:
     except Exception as err:
         print(f"ERROR: {err}", file=sys.stderr)
         return 2
+
+    if args.extract == "conversation":
+        try:
+            rendered, source_url = _render_conversation_extract(
+                username=username,
+                tweet_id=tweet_id,
+                args=args,
+            )
+        except Exception as err:
+            print(f"ERROR: request failed: {err}", file=sys.stderr)
+            return 1
+
+        if args.out:
+            out_path = args.out
+        elif args.out_dir:
+            os.makedirs(args.out_dir, exist_ok=True)
+            fname = _slugify_filename(f"{username}_{tweet_id}_conversation") + ".md"
+            out_path = os.path.join(args.out_dir, fname)
+        else:
+            out_path = None
+
+        if out_path:
+            with open(out_path, "w", encoding="utf-8") as f:
+                f.write(rendered)
+            print(out_path)
+            print(f"OUTPUT_EN={out_path}", file=sys.stderr)
+            print(f"FETCH_SOURCE=jina:{source_url}", file=sys.stderr)
+        else:
+            sys.stdout.write(rendered)
+        return 0
 
     try:
         normalized, raw_text, attempts = fetch_with_fallback(
