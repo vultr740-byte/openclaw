@@ -105,15 +105,13 @@ describe("buildEmbeddedRunPayloads", () => {
   });
 
   it("sends the recharge URL as a separate payload for billing errors", () => {
-    const payloads = withEnv(
-      { OPENCLAW_RECHARGE_TARGET: "webclaw:claw:weixin:74339e895533e12f" },
-      () =>
-        buildPayloads({
-          lastAssistant: makeAssistant({
-            errorMessage: "insufficient credits",
-            content: [{ type: "text", text: "insufficient credits" }],
-          }),
+    const payloads = withEnv({ OPENCLAW_RECHARGE_TARGET: "weixin_74339e895533e12f" }, () =>
+      buildPayloads({
+        lastAssistant: makeAssistant({
+          errorMessage: "insufficient credits",
+          content: [{ type: "text", text: "insufficient credits" }],
         }),
+      }),
     );
 
     expect(payloads).toHaveLength(2);
@@ -122,7 +120,7 @@ describe("buildEmbeddedRunPayloads", () => {
       isError: true,
     });
     expect(payloads[1]).toMatchObject({
-      text: "https://www.xialiao.app/recharge/webclaw:claw:weixin:74339e895533e12f",
+      text: "https://www.xialiao.app/recharge/weixin_74339e895533e12f",
     });
     expect(payloads[1]?.isError).toBeUndefined();
   });

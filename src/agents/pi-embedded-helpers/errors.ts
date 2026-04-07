@@ -33,7 +33,7 @@ export const BILLING_ERROR_USER_MESSAGE =
   "⚠️ Model balance is insufficient. Please top up and try again.";
 
 function encodeBillingRechargeTargetForPath(target: string): string {
-  return encodeURIComponent(target).replace(/%3A/gi, ":");
+  return encodeURIComponent(target);
 }
 
 function resolveBillingRechargeTarget(env: NodeJS.ProcessEnv): string | null {
