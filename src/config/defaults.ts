@@ -59,6 +59,23 @@ function isPositiveNumber(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value) && value > 0;
 }
 
+export function resolveNormalizedProviderModelMaxTokens(params: {
+  providerId: string;
+  modelId: string;
+  contextWindow: number;
+  rawMaxTokens: number;
+}): number {
+  const contextWindow = Math.max(1, Math.floor(params.contextWindow));
+  const rawMaxTokens = Math.max(1, Math.floor(params.rawMaxTokens));
+  const normalizedProvider = normalizeProviderId(params.providerId);
+  if (normalizedProvider !== "mistral") {
+    return Math.min(rawMaxTokens, contextWindow);
+  }
+  // Mistral endpoints reject requests that set max_tokens equal to the full
+  // context window. Keep one token of headroom to avoid those hard rejects.
+  return Math.min(rawMaxTokens, Math.max(1, contextWindow - 1));
+}
+
 function resolveModelCost(
   raw?: Partial<ModelDefinitionConfig["cost"]>,
 ): ModelDefinitionConfig["cost"] {
@@ -263,7 +280,12 @@ export function applyModelDefaults(cfg: OpenClawConfig): OpenClawConfig {
 
         const defaultMaxTokens = Math.min(DEFAULT_MODEL_MAX_TOKENS, contextWindow);
         const rawMaxTokens = isPositiveNumber(raw.maxTokens) ? raw.maxTokens : defaultMaxTokens;
-        const maxTokens = Math.min(rawMaxTokens, contextWindow);
+        const maxTokens = resolveNormalizedProviderModelMaxTokens({
+          providerId,
+          modelId: raw.id,
+          contextWindow,
+          rawMaxTokens,
+        });
         if (raw.maxTokens !== maxTokens) {
           modelMutated = true;
         }

@@ -264,7 +264,7 @@ describe("loginGeminiCliOAuth", () => {
     if (Array.isArray(headers)) {
       return headers.find(([key]) => key.toLowerCase() === name.toLowerCase())?.[1];
     }
-    return (headers as Record<string, string>)[name];
+    return headers[name];
   }
 
   function responseJson(body: unknown, status = 200): Response {
@@ -297,7 +297,7 @@ describe("loginGeminiCliOAuth", () => {
       note: async () => {},
       prompt: async () => {
         const state = new URL(authUrl).searchParams.get("state");
-        return `${"http://localhost:8085/oauth2callback"}?code=oauth-code&state=${state}`;
+        return `http://localhost:8085/oauth2callback?code=oauth-code&state=${state}`;
       },
       progress: { update: () => {}, stop: () => {} },
     });
@@ -378,7 +378,7 @@ describe("loginGeminiCliOAuth", () => {
       pluginType: "GEMINI",
     });
 
-    const body = JSON.parse(String(loadRequests[0]?.init?.body));
+    const body = JSON.parse(loadRequests[0]?.init?.body as string);
     expect(body).toEqual({
       metadata: {
         ideType: "ANTIGRAVITY",

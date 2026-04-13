@@ -81,6 +81,8 @@ export type FollowupRun = {
     inputProvenance?: InputProvenance;
     extraSystemPrompt?: string;
     enforceFinalTag?: boolean;
+    skipProviderRuntimeHints?: boolean;
+    silentExpected?: boolean;
   };
 };
 
@@ -90,4 +92,5 @@ export type ResolveQueueSettingsParams = {
   sessionEntry?: SessionEntry;
   inlineMode?: QueueMode;
   inlineOptions?: Partial<QueueSettings>;
+  pluginDebounceMs?: number;
 };

@@ -49,9 +49,8 @@ export const LEGACY_CONFIG_MIGRATIONS_PART_2: LegacyConfigMigration[] = [
       }
       const label = agentRoot ? "agent" : "agents.defaults";
 
-      const legacyModel = typeof agent.model === "string" ? String(agent.model) : undefined;
-      const legacyImageModel =
-        typeof agent.imageModel === "string" ? String(agent.imageModel) : undefined;
+      const legacyModel = typeof agent.model === "string" ? agent.model : undefined;
+      const legacyImageModel = typeof agent.imageModel === "string" ? agent.imageModel : undefined;
       const legacyAllowed = Array.isArray(agent.allowedModels)
         ? (agent.allowedModels as unknown[]).map(String)
         : [];
@@ -217,7 +216,7 @@ export const LEGACY_CONFIG_MIGRATIONS_PART_2: LegacyConfigMigration[] = [
 
       if (routingAgents) {
         for (const [rawId, entryRaw] of Object.entries(routingAgents)) {
-          const agentId = String(rawId ?? "").trim();
+          const agentId = rawId.trim();
           const entry = getRecord(entryRaw);
           if (!agentId || !entry) {
             continue;

@@ -60,11 +60,19 @@ vi.mock("./runtime.js", () => ({
 
 vi.mock("./targets.js", () => ({
   normalizeGoogleChatTarget: (raw?: string | null) => {
-    if (!raw?.trim()) return undefined;
-    if (raw === "invalid-target") return undefined;
+    if (!raw?.trim()) {
+      return undefined;
+    }
+    if (raw === "invalid-target") {
+      return undefined;
+    }
     const trimmed = raw.trim().replace(/^(googlechat|google-chat|gchat):/i, "");
-    if (trimmed.startsWith("spaces/")) return trimmed;
-    if (trimmed.includes("@")) return `users/${trimmed.toLowerCase()}`;
+    if (trimmed.startsWith("spaces/")) {
+      return trimmed;
+    }
+    if (trimmed.includes("@")) {
+      return `users/${trimmed.toLowerCase()}`;
+    }
     return `users/${trimmed}`;
   },
   isGoogleChatUserTarget: (value: string) => value.startsWith("users/"),

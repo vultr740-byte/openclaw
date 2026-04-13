@@ -1898,7 +1898,7 @@ describe("QmdMemoryManager", () => {
               return [
                 {
                   collection: "sessions-main",
-                  path: `${String(arg)}.md`,
+                  path: `${arg}.md`,
                 },
               ];
             default:

@@ -276,7 +276,7 @@ export function formatError(err: unknown): string {
   const code = (err as { code?: unknown })?.code;
   const codeText = typeof code === "string" || typeof code === "number" ? String(code) : undefined;
 
-  const messageCandidates = [
+  const message = [
     boom?.message,
     typeof (err as { message?: unknown })?.message === "string"
       ? ((err as { message?: unknown }).message as string)
@@ -284,8 +284,7 @@ export function formatError(err: unknown): string {
     typeof (err as { error?: { message?: unknown } })?.error?.message === "string"
       ? ((err as { error?: { message?: unknown } }).error?.message as string)
       : undefined,
-  ].filter((v): v is string => Boolean(v && v.trim().length > 0));
-  const message = messageCandidates[0];
+  ].find((v): v is string => Boolean(v && v.trim().length > 0));
 
   const pieces: string[] = [];
   if (typeof status === "number") {

@@ -120,7 +120,15 @@ function resolveIMessageAccountConfig(params: { cfg: OpenClawConfig; accountId?:
   if (!accountId) {
     return undefined;
   }
-  return params.cfg.channels?.imessage?.accounts?.[accountId];
+  const accounts = params.cfg.channels?.imessage?.accounts;
+  if (!accounts) {
+    return undefined;
+  }
+  if (accountId in accounts) {
+    return accounts[accountId];
+  }
+  const target = accountId.toLowerCase();
+  return Object.entries(accounts).find(([key]) => key.trim().toLowerCase() === target)?.[1];
 }
 
 export function resolveIMessageAttachmentRoots(params: {

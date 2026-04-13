@@ -2,17 +2,17 @@ import fs from "node:fs";
 import path from "node:path";
 import type { OpenClawConfig } from "../config/config.js";
 import { resolveBrewExecutable } from "../infra/brew.js";
+import { formatErrorMessage } from "../infra/errors.js";
 import {
-  resolveInstallBinDir,
-  resolveInstallRootDir,
-  resolveInstallTarget,
-  type InstallTarget,
-} from "../infra/install-runtime.js";
+  type InstallSafetyOverrides,
+  scanSkillInstallSource,
+  type SkillInstallSpecMetadata,
+} from "../plugins/install-security-scan.js";
 import { runCommandWithTimeout, type CommandOptions } from "../process/exec.js";
-import { scanDirectoryWithSummary } from "../security/skill-scanner.js";
 import { resolveUserPath } from "../utils.js";
 import { installDownloadSpec } from "./skills-install-download.js";
 import { formatInstallFailureMessage } from "./skills-install-output.js";
+import type { SkillInstallResult } from "./skills-install.types.js";
 import {
   hasBinary,
   loadWorkspaceSkillEntries,
@@ -21,23 +21,16 @@ import {
   type SkillInstallSpec,
   type SkillsInstallPreferences,
 } from "./skills.js";
+import { resolveSkillSource } from "./skills/source.js";
 
-export type SkillInstallRequest = {
+export type SkillInstallRequest = InstallSafetyOverrides & {
   workspaceDir: string;
   skillName: string;
   installId: string;
   timeoutMs?: number;
   config?: OpenClawConfig;
 };
-
-export type SkillInstallResult = {
-  ok: boolean;
-  message: string;
-  stdout: string;
-  stderr: string;
-  code: number | null;
-  warnings?: string[];
-};
+export type { SkillInstallResult } from "./skills-install.types.js";
 
 function withWarnings(result: SkillInstallResult, warnings: string[]): SkillInstallResult {
   if (warnings.length === 0) {
@@ -47,47 +40,6 @@ function withWarnings(result: SkillInstallResult, warnings: string[]): SkillInst
     ...result,
     warnings: warnings.slice(),
   };
-}
-
-function formatScanFindingDetail(
-  rootDir: string,
-  finding: { message: string; file: string; line: number },
-): string {
-  const relativePath = path.relative(rootDir, finding.file);
-  const filePath =
-    relativePath && relativePath !== "." && !relativePath.startsWith("..")
-      ? relativePath
-      : path.basename(finding.file);
-  return `${finding.message} (${filePath}:${finding.line})`;
-}
-
-async function collectSkillInstallScanWarnings(entry: SkillEntry): Promise<string[]> {
-  const warnings: string[] = [];
-  const skillName = entry.skill.name;
-  const skillDir = path.resolve(entry.skill.baseDir);
-
-  try {
-    const summary = await scanDirectoryWithSummary(skillDir);
-    if (summary.critical > 0) {
-      const criticalDetails = summary.findings
-        .filter((finding) => finding.severity === "critical")
-        .map((finding) => formatScanFindingDetail(skillDir, finding))
-        .join("; ");
-      warnings.push(
-        `WARNING: Skill "${skillName}" contains dangerous code patterns: ${criticalDetails}`,
-      );
-    } else if (summary.warn > 0) {
-      warnings.push(
-        `Skill "${skillName}" has ${summary.warn} suspicious code pattern(s). Run "openclaw security audit --deep" for details.`,
-      );
-    }
-  } catch (err) {
-    warnings.push(
-      `Skill "${skillName}" code safety scan failed (${String(err)}). Installation continues; run "openclaw security audit --deep" after install.`,
-    );
-  }
-
-  return warnings;
 }
 
 function resolveInstallId(spec: SkillInstallSpec, index: number): string {
@@ -104,86 +56,60 @@ function findInstallSpec(entry: SkillEntry, installId: string): SkillInstallSpec
   return undefined;
 }
 
-function buildNodeInstallCommand(params: {
-  packageName: string;
-  prefs: SkillsInstallPreferences;
-  target: InstallTarget;
-  installRootDir?: string;
-  installBinDir?: string;
-}): { argv: string[]; env?: NodeJS.ProcessEnv } {
-  const { packageName, prefs, target, installRootDir, installBinDir } = params;
-  const localInstall = target !== "global" && installRootDir;
+function normalizeSkillInstallSpec(spec: SkillInstallSpec): SkillInstallSpecMetadata {
+  return {
+    ...(spec.id ? { id: spec.id } : {}),
+    kind: spec.kind,
+    ...(spec.label ? { label: spec.label } : {}),
+    ...(spec.bins ? { bins: spec.bins.slice() } : {}),
+    ...(spec.os ? { os: spec.os.slice() } : {}),
+    ...(spec.formula ? { formula: spec.formula } : {}),
+    ...(spec.package ? { package: spec.package } : {}),
+    ...(spec.module ? { module: spec.module } : {}),
+    ...(spec.url ? { url: spec.url } : {}),
+    ...(spec.archive ? { archive: spec.archive } : {}),
+    ...(spec.extract !== undefined ? { extract: spec.extract } : {}),
+    ...(spec.stripComponents !== undefined ? { stripComponents: spec.stripComponents } : {}),
+    ...(spec.targetDir ? { targetDir: spec.targetDir } : {}),
+  };
+}
 
+function buildNodeInstallCommand(packageName: string, prefs: SkillsInstallPreferences): string[] {
   switch (prefs.nodeManager) {
     case "pnpm":
-      if (localInstall) {
-        return {
-          argv: [
-            "pnpm",
-            "add",
-            "-g",
-            "--global-dir",
-            installRootDir,
-            "--global-bin-dir",
-            installBinDir ?? path.join(installRootDir, "bin"),
-            "--ignore-scripts",
-            packageName,
-          ],
-        };
-      }
-      return { argv: ["pnpm", "add", "-g", "--ignore-scripts", packageName] };
+      return ["pnpm", "add", "-g", "--ignore-scripts", packageName];
     case "yarn":
-      if (localInstall) {
-        return {
-          argv: [
-            "yarn",
-            "global",
-            "add",
-            "--prefix",
-            installRootDir,
-            "--ignore-scripts",
-            packageName,
-          ],
-        };
-      }
-      return { argv: ["yarn", "global", "add", "--ignore-scripts", packageName] };
+      return ["yarn", "global", "add", "--ignore-scripts", packageName];
     case "bun":
-      if (localInstall) {
-        return {
-          argv: ["bun", "add", "-g", "--ignore-scripts", packageName],
-          env: { BUN_INSTALL: installRootDir },
-        };
-      }
-      return { argv: ["bun", "add", "-g", "--ignore-scripts", packageName] };
+      return ["bun", "add", "-g", "--ignore-scripts", packageName];
     default:
-      if (localInstall) {
-        return {
-          argv: [
-            "npm",
-            "install",
-            "-g",
-            "--prefix",
-            installRootDir,
-            "--ignore-scripts",
-            packageName,
-          ],
-        };
-      }
-      return { argv: ["npm", "install", "-g", "--ignore-scripts", packageName] };
+      return ["npm", "install", "-g", "--ignore-scripts", packageName];
   }
+}
+
+// Strict allowlist patterns to prevent option injection and malicious package names.
+const SAFE_BREW_FORMULA = /^[a-z0-9][a-z0-9+._@-]*(\/[a-z0-9][a-z0-9+._@-]*){0,2}$/;
+const SAFE_NODE_PACKAGE = /^(@[a-z0-9._-]+\/)?[a-z0-9._-]+(@[a-z0-9^~>=<.*|-]+)?$/;
+const SAFE_GO_MODULE = /^[a-zA-Z0-9][a-zA-Z0-9._/-]*@[a-z0-9v._-]+$/;
+const SAFE_UV_PACKAGE =
+  /^[a-z0-9][a-z0-9._-]*(\[[a-z0-9,._-]+\])?(([><=!~]=?|===?)[a-z0-9.*_-]+)?$/i;
+
+function assertSafeInstallerValue(value: string, kind: string, pattern: RegExp): string | null {
+  const trimmed = value.trim();
+  if (!trimmed || trimmed.startsWith("-")) {
+    return `${kind} value is empty or starts with a dash`;
+  }
+  if (!pattern.test(trimmed)) {
+    return `${kind} value contains invalid characters: ${trimmed}`;
+  }
+  return null;
 }
 
 function buildInstallCommand(
   spec: SkillInstallSpec,
   prefs: SkillsInstallPreferences,
-  runtime: {
-    target: InstallTarget;
-    installRootDir?: string;
-    installBinDir?: string;
-  },
 ): {
   argv: string[] | null;
-  env?: NodeJS.ProcessEnv;
   error?: string;
 } {
   switch (spec.kind) {
@@ -191,31 +117,43 @@ function buildInstallCommand(
       if (!spec.formula) {
         return { argv: null, error: "missing brew formula" };
       }
-      return { argv: ["brew", "install", spec.formula] };
+      const err = assertSafeInstallerValue(spec.formula, "brew formula", SAFE_BREW_FORMULA);
+      if (err) {
+        return { argv: null, error: err };
+      }
+      return { argv: ["brew", "install", spec.formula.trim()] };
     }
     case "node": {
       if (!spec.package) {
         return { argv: null, error: "missing node package" };
       }
-      return buildNodeInstallCommand({
-        packageName: spec.package,
-        prefs,
-        target: runtime.target,
-        installRootDir: runtime.installRootDir,
-        installBinDir: runtime.installBinDir,
-      });
+      const err = assertSafeInstallerValue(spec.package, "node package", SAFE_NODE_PACKAGE);
+      if (err) {
+        return { argv: null, error: err };
+      }
+      return {
+        argv: buildNodeInstallCommand(spec.package.trim(), prefs),
+      };
     }
     case "go": {
       if (!spec.module) {
         return { argv: null, error: "missing go module" };
       }
-      return { argv: ["go", "install", spec.module] };
+      const err = assertSafeInstallerValue(spec.module, "go module", SAFE_GO_MODULE);
+      if (err) {
+        return { argv: null, error: err };
+      }
+      return { argv: ["go", "install", spec.module.trim()] };
     }
     case "uv": {
       if (!spec.package) {
         return { argv: null, error: "missing uv package" };
       }
-      return { argv: ["uv", "tool", "install", spec.package] };
+      const err = assertSafeInstallerValue(spec.package, "uv package", SAFE_UV_PACKAGE);
+      if (err) {
+        return { argv: null, error: err };
+      }
+      return { argv: ["uv", "tool", "install", spec.package.trim()] };
     }
     case "download": {
       return { argv: null, error: "download install handled separately" };
@@ -304,7 +242,7 @@ async function runCommandSafely(
     return {
       code: null,
       stdout: "",
-      stderr: err instanceof Error ? err.message : String(err),
+      stderr: formatErrorMessage(err),
     };
   }
 }
@@ -477,7 +415,40 @@ export async function installSkill(params: SkillInstallRequest): Promise<SkillIn
   }
 
   const spec = findInstallSpec(entry, params.installId);
-  const warnings = await collectSkillInstallScanWarnings(entry);
+  const warnings: string[] = [];
+  const skillSource = resolveSkillSource(entry.skill);
+  const normalizedSpec = spec ? normalizeSkillInstallSpec(spec) : undefined;
+  const scanResult = await scanSkillInstallSource({
+    dangerouslyForceUnsafeInstall: params.dangerouslyForceUnsafeInstall,
+    installId: params.installId,
+    ...(normalizedSpec ? { installSpec: normalizedSpec } : {}),
+    logger: {
+      warn: (message) => warnings.push(message),
+    },
+    origin: skillSource,
+    skillName: params.skillName,
+    sourceDir: path.resolve(entry.skill.baseDir),
+  });
+  if (scanResult?.blocked) {
+    return withWarnings(
+      {
+        ok: false,
+        message: scanResult.blocked.reason,
+        stdout: "",
+        stderr: "",
+        code: null,
+      },
+      warnings,
+    );
+  }
+  // Warn when install is triggered from a non-bundled source.
+  // Workspace/project/personal agent skills can contain attacker-controlled metadata.
+  const trustedInstallSources = new Set(["openclaw-bundled", "openclaw-managed", "openclaw-extra"]);
+  if (!trustedInstallSources.has(skillSource)) {
+    warnings.push(
+      `WARNING: Skill "${params.skillName}" install triggered from non-bundled source "${skillSource}". Verify the install recipe is trusted.`,
+    );
+  }
   if (!spec) {
     return withWarnings(
       {
@@ -496,32 +467,7 @@ export async function installSkill(params: SkillInstallRequest): Promise<SkillIn
   }
 
   const prefs = resolveSkillsInstallPreferences(params.config);
-  const installTargetResolution = resolveInstallTarget({
-    mode: prefs.mode,
-    workspaceDir,
-  });
-  const installRootDir = resolveInstallRootDir(installTargetResolution);
-  const installBinDir = resolveInstallBinDir(installTargetResolution);
-  if (installRootDir) {
-    try {
-      fs.mkdirSync(installRootDir, { recursive: true });
-      if (installBinDir) {
-        fs.mkdirSync(installBinDir, { recursive: true });
-      }
-    } catch (err) {
-      return withWarnings(
-        createInstallFailure({
-          message: `Failed to prepare local install directories: ${String(err)}`,
-        }),
-        warnings,
-      );
-    }
-  }
-  const command = buildInstallCommand(spec, prefs, {
-    target: installTargetResolution.target,
-    installRootDir,
-    installBinDir,
-  });
+  const command = buildInstallCommand(spec, prefs);
   if (command.error) {
     return withWarnings(
       {
@@ -555,17 +501,14 @@ export async function installSkill(params: SkillInstallRequest): Promise<SkillIn
     argv[0] = brewExe;
   }
 
-  let env: NodeJS.ProcessEnv | undefined = command.env ? { ...command.env } : undefined;
-  if (spec.kind === "go") {
-    if (installBinDir) {
-      env = { ...env, GOBIN: installBinDir };
-    } else if (brewExe) {
-      const brewBin = await resolveBrewBinDir(timeoutMs, brewExe);
-      if (brewBin) {
-        env = { ...env, GOBIN: brewBin };
-      }
+  const envOverrides: NodeJS.ProcessEnv = {};
+  if (spec.kind === "go" && brewExe) {
+    const brewBin = await resolveBrewBinDir(timeoutMs, brewExe);
+    if (brewBin) {
+      envOverrides.GOBIN = brewBin;
     }
   }
+  const env = Object.keys(envOverrides).length > 0 ? envOverrides : undefined;
 
   return withWarnings(await executeInstallCommand({ argv, timeoutMs, env }), warnings);
 }

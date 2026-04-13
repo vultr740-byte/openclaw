@@ -122,7 +122,7 @@ function resolveStatusTextForTag(params: {
   }
   if (tag === "plan") {
     const entries = Array.isArray(payload.entries) ? payload.entries : [];
-    const first = entries.find((entry) => isRecord(entry)) as Record<string, unknown> | undefined;
+    const first = entries.find((entry) => isRecord(entry));
     const content = asTrimmedString(first?.content);
     return content ? `plan: ${content}` : null;
   }
@@ -218,7 +218,7 @@ export function parsePromptEventLine(line: string): AcpRuntimeEvent | null {
       return {
         type: "tool_call",
         text: status ? `${title} (${status})` : title,
-        tag: (tag ?? "tool_call") as AcpSessionUpdateTag,
+        tag: tag ?? "tool_call",
         ...(toolCallId ? { toolCallId } : {}),
         ...(status ? { status } : {}),
         title,
@@ -232,7 +232,7 @@ export function parsePromptEventLine(line: string): AcpRuntimeEvent | null {
       return {
         type: "tool_call",
         text,
-        tag: (tag ?? "tool_call_update") as AcpSessionUpdateTag,
+        tag: tag ?? "tool_call_update",
         ...(toolCallId ? { toolCallId } : {}),
         ...(status ? { status } : {}),
         title,

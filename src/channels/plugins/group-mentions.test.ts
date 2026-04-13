@@ -32,7 +32,6 @@ const cfg = {
       },
     },
   },
-  // oxlint-disable-next-line typescript/no-explicit-any
 } as any;
 
 describe("group mentions (slack)", () => {
@@ -87,7 +86,6 @@ describe("group mentions (telegram)", () => {
           },
         },
       },
-      // oxlint-disable-next-line typescript/no-explicit-any
     } as any;
     expect(
       resolveTelegramGroupRequireMention({ cfg: telegramCfg, groupId: "-1001:topic:77" }),
@@ -126,7 +124,6 @@ describe("group mentions (discord)", () => {
           },
         },
       },
-      // oxlint-disable-next-line typescript/no-explicit-any
     } as any;
 
     expect(
@@ -191,7 +188,6 @@ describe("group mentions (bluebubbles)", () => {
           },
         },
       },
-      // oxlint-disable-next-line typescript/no-explicit-any
     } as any;
 
     expect(
@@ -231,7 +227,6 @@ describe("group mentions (line)", () => {
           },
         },
       },
-      // oxlint-disable-next-line typescript/no-explicit-any
     } as any;
 
     expect(resolveLineGroupRequireMention({ cfg: lineCfg, groupId: "r123" })).toBe(false);
@@ -267,7 +262,6 @@ describe("group mentions (line)", () => {
           },
         },
       },
-      // oxlint-disable-next-line typescript/no-explicit-any
     } as any;
 
     expect(

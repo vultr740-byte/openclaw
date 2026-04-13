@@ -59,13 +59,11 @@ export async function configureGatewayForOnboarding(
     flow === "quickstart"
       ? quickstartGateway.port
       : Number.parseInt(
-          String(
-            await prompter.text({
-              message: "Gateway port",
-              initialValue: String(localPort),
-              validate: (value) => (Number.isFinite(Number(value)) ? undefined : "Invalid port"),
-            }),
-          ),
+          await prompter.text({
+            message: "Gateway port",
+            initialValue: String(localPort),
+            validate: (value) => (Number.isFinite(Number(value)) ? undefined : "Invalid port"),
+          }),
           10,
         );
 
@@ -134,12 +132,10 @@ export async function configureGatewayForOnboarding(
   let tailscaleResetOnExit = flow === "quickstart" ? quickstartGateway.tailscaleResetOnExit : false;
   if (tailscaleMode !== "off" && flow !== "quickstart") {
     await prompter.note(TAILSCALE_DOCS_LINES.join("\n"), "Tailscale");
-    tailscaleResetOnExit = Boolean(
-      await prompter.confirm({
-        message: "Reset Tailscale serve/funnel on exit?",
-        initialValue: false,
-      }),
-    );
+    tailscaleResetOnExit = await prompter.confirm({
+      message: "Reset Tailscale serve/funnel on exit?",
+      initialValue: false,
+    });
   }
 
   // Safety + constraints:
@@ -248,11 +244,11 @@ export async function configureGatewayForOnboarding(
         });
         password = resolved.ref;
       } else {
-        password = String(
-          (await prompter.text({
+        password = (
+          await prompter.text({
             message: "Gateway password",
             validate: validateGatewayPasswordInput,
-          })) ?? "",
+          })
         ).trim();
       }
     }

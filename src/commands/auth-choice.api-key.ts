@@ -1,7 +1,7 @@
 const DEFAULT_KEY_PREVIEW = { head: 4, tail: 4 };
 
 export function normalizeApiKeyInput(raw: string): string {
-  const trimmed = String(raw ?? "").trim();
+  const trimmed = raw.trim();
   if (!trimmed) {
     return "";
   }

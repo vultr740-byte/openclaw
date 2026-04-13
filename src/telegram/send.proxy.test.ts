@@ -48,7 +48,9 @@ vi.mock("grammy", () => ({
       botCtorSpy(token, options);
     }
   },
-  InputFile: class {},
+  InputFile: class {
+    constructor(public value?: unknown) {}
+  },
 }));
 
 import {

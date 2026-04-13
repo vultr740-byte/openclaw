@@ -1,4 +1,8 @@
 import type { OpenClawConfig } from "../config/config.js";
+import {
+  normalizeLowercaseStringOrEmpty,
+  normalizeOptionalString,
+} from "../shared/string-coerce.js";
 import type { SkillsInstallPreferences } from "./skills/types.js";
 
 export {
@@ -26,12 +30,13 @@ export type {
 export {
   buildWorkspaceSkillSnapshot,
   buildWorkspaceSkillsPrompt,
-  buildWorkspaceSkillCommandSpecs,
   filterWorkspaceSkillEntries,
+  filterWorkspaceSkillEntriesWithOptions,
   loadWorkspaceSkillEntries,
   resolveSkillsPromptForRun,
   syncSkillsToWorkspace,
 } from "./skills/workspace.js";
+export { buildWorkspaceSkillCommandSpecs } from "./skills/command-specs.js";
 
 export function resolveSkillsInstallPreferences(config?: OpenClawConfig): SkillsInstallPreferences {
   const raw = config?.skills?.install;
@@ -39,8 +44,7 @@ export function resolveSkillsInstallPreferences(config?: OpenClawConfig): Skills
   const mode = modeRaw.toLowerCase();
   const installMode: SkillsInstallPreferences["mode"] = mode === "global" ? "global" : "auto";
   const preferBrew = raw?.preferBrew ?? true;
-  const managerRaw = typeof raw?.nodeManager === "string" ? raw.nodeManager.trim() : "";
-  const manager = managerRaw.toLowerCase();
+  const manager = normalizeLowercaseStringOrEmpty(normalizeOptionalString(raw?.nodeManager));
   const nodeManager: SkillsInstallPreferences["nodeManager"] =
     manager === "pnpm" || manager === "yarn" || manager === "bun" || manager === "npm"
       ? manager

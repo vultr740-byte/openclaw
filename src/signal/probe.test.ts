@@ -5,7 +5,7 @@ import { probeSignal } from "./probe.js";
 const signalCheckMock = vi.fn();
 const signalRpcRequestMock = vi.fn();
 
-vi.mock("./client.js", () => ({
+vi.mock("../../extensions/signal/src/client.js", () => ({
   signalCheck: (...args: unknown[]) => signalCheckMock(...args),
   signalRpcRequest: (...args: unknown[]) => signalRpcRequestMock(...args),
 }));

@@ -71,7 +71,9 @@ vi.mock("grammy", () => ({
     catch = vi.fn();
     constructor(public token: string) {}
   },
-  InputFile: class {},
+  InputFile: class {
+    constructor(public value?: unknown) {}
+  },
   webhookCallback: vi.fn(),
 }));
 

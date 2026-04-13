@@ -63,7 +63,6 @@ describe("account-scoped LINE groups", () => {
           },
         },
       },
-      // oxlint-disable-next-line typescript/no-explicit-any
     } as any;
 
     expect(resolveLineGroupsConfig(cfg, "work")).toEqual({

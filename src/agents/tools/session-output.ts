@@ -112,7 +112,7 @@ export async function readLatestSessionOutput(params: {
   } catch {
     // Best-effort: fall back to richer history parsing below.
   }
-  const history = await callGateway<{ messages?: Array<unknown> }>({
+  const history = await callGateway({
     method: "chat.history",
     params: { sessionKey: params.sessionKey, limit: params.limit ?? 50 },
   });

@@ -42,10 +42,10 @@ type RegisterCliContext = {
   logger: typeof noopLogger;
 };
 
-function setup(config: Record<string, unknown>): Registered {
+async function setup(config: Record<string, unknown>): Promise<Registered> {
   const methods = new Map<string, unknown>();
   const tools: unknown[] = [];
-  plugin.register({
+  await plugin.register({
     id: "voice-call",
     name: "Voice Call",
     description: "test",
@@ -115,8 +115,8 @@ describe("voice-call plugin", () => {
 
   afterEach(() => vi.restoreAllMocks());
 
-  it("registers gateway methods", () => {
-    const { methods } = setup({ provider: "mock" });
+  it("registers gateway methods", async () => {
+    const { methods } = await setup({ provider: "mock" });
     expect(methods.has("voicecall.initiate")).toBe(true);
     expect(methods.has("voicecall.continue")).toBe(true);
     expect(methods.has("voicecall.speak")).toBe(true);
@@ -126,7 +126,7 @@ describe("voice-call plugin", () => {
   });
 
   it("initiates a call via voicecall.initiate", async () => {
-    const { methods } = setup({ provider: "mock" });
+    const { methods } = await setup({ provider: "mock" });
     const handler = methods.get("voicecall.initiate") as
       | ((ctx: {
           params: Record<string, unknown>;
@@ -142,7 +142,7 @@ describe("voice-call plugin", () => {
   });
 
   it("returns call status", async () => {
-    const { methods } = setup({ provider: "mock" });
+    const { methods } = await setup({ provider: "mock" });
     const handler = methods.get("voicecall.status") as
       | ((ctx: {
           params: Record<string, unknown>;
@@ -157,7 +157,7 @@ describe("voice-call plugin", () => {
   });
 
   it("tool get_status returns json payload", async () => {
-    const { tools } = setup({ provider: "mock" });
+    const { tools } = await setup({ provider: "mock" });
     const tool = tools[0] as {
       execute: (id: string, params: unknown) => Promise<unknown>;
     };
@@ -169,7 +169,7 @@ describe("voice-call plugin", () => {
   });
 
   it("legacy tool status without sid returns error payload", async () => {
-    const { tools } = setup({ provider: "mock" });
+    const { tools } = await setup({ provider: "mock" });
     const tool = tools[0] as {
       execute: (id: string, params: unknown) => Promise<unknown>;
     };
