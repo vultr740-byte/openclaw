@@ -52,7 +52,20 @@ export {
 const log = createSubsystemLogger("errors");
 
 const BILLING_RECHARGE_BASE_URL = "https://www.xialiao.app/recharge/";
-const BILLING_RECHARGE_TARGET_ENV = "OPENCLAW_RECHARGE_TARGET";
+const BILLING_RECHARGE_TARGET_ENV = "RECHARGE_TARGET";
+
+function resolveFirstEnvValue(
+  env: NodeJS.ProcessEnv,
+  ...keys: string[]
+): string | null {
+  for (const key of keys) {
+    const value = env[key]?.trim();
+    if (value) {
+      return value;
+    }
+  }
+  return null;
+}
 
 export function formatBillingErrorMessage(provider?: string, model?: string): string {
   void provider;
@@ -68,7 +81,7 @@ function encodeBillingRechargeTargetForPath(target: string): string {
 }
 
 function resolveBillingRechargeTarget(env: NodeJS.ProcessEnv): string | null {
-  const explicitTarget = env[BILLING_RECHARGE_TARGET_ENV]?.trim();
+  const explicitTarget = resolveFirstEnvValue(env, BILLING_RECHARGE_TARGET_ENV);
   if (explicitTarget) {
     return explicitTarget;
   }

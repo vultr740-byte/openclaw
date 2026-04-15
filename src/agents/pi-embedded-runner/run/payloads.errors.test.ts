@@ -105,7 +105,7 @@ describe("buildEmbeddedRunPayloads", () => {
   });
 
   it("sends the recharge URL as a separate payload for billing errors", () => {
-    const payloads = withEnv({ OPENCLAW_RECHARGE_TARGET: "weixin_74339e895533e12f" }, () =>
+    const payloads = withEnv({ RECHARGE_TARGET: "weixin_74339e895533e12f" }, () =>
       buildPayloads({
         lastAssistant: makeAssistant({
           errorMessage: "insufficient credits",
