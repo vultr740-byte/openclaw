@@ -533,7 +533,7 @@ describe("runCronIsolatedAgentTurn", () => {
       });
 
       expect(res.status).toBe("ok");
-      expect(String(res.summary ?? "")).toMatch(/…$/);
+      expect(res.summary ?? "").toMatch(/…$/);
     });
   });
 

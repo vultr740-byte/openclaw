@@ -1,21 +1,18 @@
 import path from "node:path";
 
-import type { ChannelPlugin, OpenClawConfig } from "openclaw/plugin-sdk";
-import { normalizeAccountId, resolvePreferredOpenClawTmpDir } from "openclaw/plugin-sdk";
+import type { ChannelPlugin, OpenClawConfig } from "openclaw/plugin-sdk/core";
+import { resolvePreferredOpenClawTmpDir } from "openclaw/plugin-sdk/infra-runtime";
 
 import {
-  registerWeixinAccountId,
   loadWeixinAccount,
-  saveWeixinAccount,
   listWeixinAccountIds,
   resolveWeixinAccount,
-  triggerWeixinChannelReload,
-  clearStaleAccountsForUserId,
   DEFAULT_BASE_URL,
 } from "./auth/accounts.js";
 import type { ResolvedWeixinAccount } from "./auth/accounts.js";
 import { assertSessionActive } from "./api/session-guard.js";
-import { getContextToken, findAccountIdsByContextToken, restoreContextTokens, clearContextTokensForAccount } from "./messaging/inbound.js";
+import { persistConfirmedWeixinLogin, resolveWeixinBaseUrl } from "./bridge.js";
+import { getContextToken, findAccountIdsByContextToken, restoreContextTokens } from "./messaging/inbound.js";
 import { logger } from "./util/logger.js";
 import {
   DEFAULT_ILINK_BOT_TYPE,
@@ -23,9 +20,11 @@ import {
   waitForWeixinLogin,
 } from "./auth/login-qr.js";
 import type { WeixinQrStartResult, WeixinQrWaitResult } from "./auth/login-qr.js";
-import { monitorWeixinProvider } from "./monitor/monitor.js";
+// Lazy-imported inside startAccount to avoid pulling in the monitor -> process-message ->
+// command-auth chain during plugin registration, which can re-enter plugin/provider registry
+// resolution before the account actually starts.
 import { sendWeixinMediaFile } from "./messaging/send-media.js";
-import { sendMessageWeixin } from "./messaging/send.js";
+import { sendMessageWeixin, StreamingMarkdownFilter } from "./messaging/send.js";
 import { downloadRemoteImageToTemp } from "./cdn/upload.js";
 
 /** Returns true when mediaUrl refers to a local filesystem path (absolute or relative). */
@@ -118,7 +117,10 @@ async function sendWeixinOutbound(params: {
   if (!params.contextToken) {
     aLog.warn(`sendWeixinOutbound: contextToken missing for to=${params.to}, sending without context`);
   }
-  const result = await sendMessageWeixin({ to: params.to, text: params.text, opts: {
+  const f = new StreamingMarkdownFilter();
+  const rawText = params.text ?? "";
+  const filteredText = f.feed(rawText) + f.flush();
+  const result = await sendMessageWeixin({ to: params.to, text: filteredText, opts: {
     baseUrl: account.baseUrl,
     token: account.token,
     contextToken: params.contextToken,
@@ -167,6 +169,7 @@ export const weixinPlugin: ChannelPlugin<ResolvedWeixinAccount> = {
       "When the user asks you to find an image from the web, use a web search or browser tool to find a suitable image URL, then send it using the message tool with 'media' set to that HTTPS image URL — do NOT download the image first.",
       "IMPORTANT: When generating or saving a file to send, always use an absolute path (e.g. /tmp/photo.png), never a relative path like ./photo.png. Relative paths cannot be resolved and the file will not be delivered.",
       "IMPORTANT: When creating a cron job (scheduled task) for the current Weixin user, you MUST set delivery.to to the user's Weixin ID (the xxx@im.wechat address from the current conversation) AND set delivery.accountId to the current AccountId. Without an explicit 'to', the cron delivery will fail with 'requires target'. Without an explicit 'accountId', the message may be sent from the wrong bot account. Example: delivery: { mode: 'announce', channel: 'openclaw-weixin', to: '<current_user_id@im.wechat>', accountId: '<current_AccountId>' }.",
+      "IMPORTANT: When outputting a MEDIA: directive to send a file, the MEDIA: tag MUST be on its own line — never inline with other text. Correct:\nSome text here\nMEDIA:/path/to/file.mp4\nIncorrect: Some text here MEDIA:/path/to/file.mp4",
     ],
   },
   reload: { configPrefixes: ["channels.openclaw-weixin"] },
@@ -318,19 +321,7 @@ export const weixinPlugin: ChannelPlugin<ResolvedWeixinAccount> = {
 
       if (waitResult.connected && waitResult.botToken && waitResult.accountId) {
         try {
-          // Normalize the raw ilink_bot_id (e.g. "hex@im.bot") to a filesystem-safe
-          // key (e.g. "hex-im-bot") so account files have no special chars.
-          const normalizedId = normalizeAccountId(waitResult.accountId);
-          saveWeixinAccount(normalizedId, {
-            token: waitResult.botToken,
-            baseUrl: waitResult.baseUrl,
-            userId: waitResult.userId,
-          });
-          registerWeixinAccountId(normalizedId);
-          if (waitResult.userId) {
-            clearStaleAccountsForUserId(normalizedId, waitResult.userId, clearContextTokensForAccount);
-          }
-          void triggerWeixinChannelReload();
+          await persistConfirmedWeixinLogin(waitResult);
           log(`\n✅ 与微信连接成功！`);
         } catch (err) {
           logger.error(
@@ -381,6 +372,7 @@ export const weixinPlugin: ChannelPlugin<ResolvedWeixinAccount> = {
       const logPath = aLog.getLogFilePath();
       ctx.log?.info?.(`[${account.accountId}] weixin logs: ${logPath}`);
 
+      const { monitorWeixinProvider } = await import("./monitor/monitor.js");
       return monitorWeixinProvider({
         baseUrl: account.baseUrl,
         cdnBaseUrl: account.cdnBaseUrl,
@@ -393,11 +385,9 @@ export const weixinPlugin: ChannelPlugin<ResolvedWeixinAccount> = {
       });
     },
     loginWithQrStart: async ({ accountId, force, timeoutMs, verbose }) => {
-      // For re-login: use saved baseUrl from account data; fall back to default for new accounts.
-      const savedBaseUrl = accountId ? loadWeixinAccount(accountId)?.baseUrl?.trim() : "";
       const result: WeixinQrStartResult = await startWeixinLoginWithQr({
         accountId: accountId ?? undefined,
-        apiBaseUrl: savedBaseUrl || DEFAULT_BASE_URL,
+        apiBaseUrl: resolveWeixinBaseUrl(accountId),
         botType: DEFAULT_ILINK_BOT_TYPE,
         force,
         timeoutMs,
@@ -413,29 +403,15 @@ export const weixinPlugin: ChannelPlugin<ResolvedWeixinAccount> = {
     loginWithQrWait: async (params) => {
       // sessionKey is forwarded by the client after loginWithQrStart (runtime param extension).
       const sessionKey = (params as { sessionKey?: string }).sessionKey || params.accountId || "";
-      const savedBaseUrl = params.accountId
-        ? loadWeixinAccount(params.accountId)?.baseUrl?.trim()
-        : "";
       const result: WeixinQrWaitResult = await waitForWeixinLogin({
         sessionKey,
-        apiBaseUrl: savedBaseUrl || DEFAULT_BASE_URL,
+        apiBaseUrl: resolveWeixinBaseUrl(params.accountId),
         timeoutMs: params.timeoutMs,
       });
 
       if (result.connected && result.botToken && result.accountId) {
         try {
-          const normalizedId = normalizeAccountId(result.accountId);
-          saveWeixinAccount(normalizedId, {
-            token: result.botToken,
-            baseUrl: result.baseUrl,
-            userId: result.userId,
-          });
-          registerWeixinAccountId(normalizedId);
-          if (result.userId) {
-            clearStaleAccountsForUserId(normalizedId, result.userId, clearContextTokensForAccount);
-          }
-          triggerWeixinChannelReload();
-          logger.info(`loginWithQrWait: saved account data for accountId=${normalizedId}`);
+          await persistConfirmedWeixinLogin(result);
         } catch (err) {
           logger.error(`loginWithQrWait: failed to save account data err=${String(err)}`);
         }

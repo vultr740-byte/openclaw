@@ -56,21 +56,20 @@ describe("plugin-sdk subpath exports", () => {
   });
 
   it("exports Discord helpers", () => {
-    expect(typeof discordSdk.resolveDiscordAccount).toBe("function");
-    expect(typeof discordSdk.inspectDiscordAccount).toBe("function");
-    expect(typeof discordSdk.discordOnboardingAdapter).toBe("object");
+    expect(typeof discordSdk.collectDiscordSecurityAuditFindings).toBe("function");
   });
 
   it("exports Slack helpers", () => {
-    expect(typeof slackSdk.resolveSlackAccount).toBe("function");
-    expect(typeof slackSdk.inspectSlackAccount).toBe("function");
-    expect(typeof slackSdk.handleSlackMessageAction).toBe("function");
+    expect(typeof slackSdk.compileSlackInteractiveReplies).toBe("function");
+    expect(typeof slackSdk.collectSlackSecurityAuditFindings).toBe("function");
   });
 
   it("exports Telegram helpers", () => {
     expect(typeof telegramSdk.resolveTelegramAccount).toBe("function");
     expect(typeof telegramSdk.inspectTelegramAccount).toBe("function");
     expect(typeof telegramSdk.telegramOnboardingAdapter).toBe("object");
+    expect(typeof telegramSdk.createScopedChannelConfigBase).toBe("function");
+    expect(typeof telegramSdk.createPluginRuntimeStore).toBe("function");
   });
 
   it("exports Signal helpers", () => {

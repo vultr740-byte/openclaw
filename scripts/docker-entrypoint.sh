@@ -68,20 +68,36 @@ if [ -z "${OPENCLAW_WORKSPACE_DIR:-}" ]; then
   export OPENCLAW_WORKSPACE_DIR="$(default_workspace_dir)"
 fi
 
-run_as_runtime_user() {
-  if [ "$(id -u)" = "0" ] && [ "${OPENCLAW_RUN_AS_ROOT:-}" != "1" ]; then
-    gosu node "$@"
-    return
-  fi
-  "$@"
-}
-
 resolve_bootstrap_channel() {
   printf '%s' "${OPENCLAW_BOOTSTRAP_CHANNEL:-}"
 }
 
 has_weixin_bootstrap_channel() {
   [ "$(resolve_bootstrap_channel)" = "weixin" ]
+}
+
+maybe_configure_bundled_plugins_dir() {
+  local bundled_plugins_dir
+  if [ -n "${OPENCLAW_BUNDLED_PLUGINS_DIR:-}" ]; then
+    return 0
+  fi
+  if ! has_weixin_bootstrap_channel; then
+    return 0
+  fi
+  bundled_plugins_dir="$(pwd)/vendor"
+  if [ -d "$bundled_plugins_dir" ]; then
+    export OPENCLAW_BUNDLED_PLUGINS_DIR="$bundled_plugins_dir"
+  fi
+}
+
+maybe_configure_bundled_plugins_dir
+
+run_as_runtime_user() {
+  if [ "$(id -u)" = "0" ] && [ "${OPENCLAW_RUN_AS_ROOT:-}" != "1" ]; then
+    gosu node "$@"
+    return
+  fi
+  "$@"
 }
 
 should_inject_bind=false
@@ -480,10 +496,7 @@ try {
       root.acp = nextAcp;
 
       if (nextChannels.telegram && typeof nextChannels.telegram === "object") {
-        nextChannels.telegram = {
-          ...nextChannels.telegram,
-          enabled: false,
-        };
+        delete nextChannels.telegram;
       }
       nextChannels["openclaw-weixin"] = {
         ...(nextChannels["openclaw-weixin"] &&
@@ -503,22 +516,8 @@ try {
           : {}),
         memory: "none",
       };
-      nextPluginEntries.telegram = {
-        ...(nextPluginEntries.telegram &&
-        typeof nextPluginEntries.telegram === "object" &&
-        !Array.isArray(nextPluginEntries.telegram)
-          ? nextPluginEntries.telegram
-          : {}),
-        enabled: false,
-      };
-      nextPluginEntries.acpx = {
-        ...(nextPluginEntries.acpx &&
-        typeof nextPluginEntries.acpx === "object" &&
-        !Array.isArray(nextPluginEntries.acpx)
-          ? nextPluginEntries.acpx
-          : {}),
-        enabled: false,
-      };
+      delete nextPluginEntries.telegram;
+      delete nextPluginEntries.acpx;
       nextPluginEntries["openclaw-weixin"] = {
         ...(nextPluginEntries["openclaw-weixin"] &&
         typeof nextPluginEntries["openclaw-weixin"] === "object" &&
@@ -541,6 +540,11 @@ try {
 
       nextCanvasHost.enabled = false;
       root.canvasHost = nextCanvasHost;
+
+      root.cron = {
+        ...(root.cron && typeof root.cron === "object" && !Array.isArray(root.cron) ? root.cron : {}),
+        enabled: true,
+      };
 
       nextAcp.enabled = false;
       if (

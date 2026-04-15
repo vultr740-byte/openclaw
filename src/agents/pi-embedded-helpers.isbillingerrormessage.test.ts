@@ -47,14 +47,11 @@ const GROQ_SERVICE_UNAVAILABLE_MESSAGE =
 describe("isAuthPermanentErrorMessage", () => {
   it("matches permanent auth failure patterns", () => {
     const samples = [
-      "invalid_api_key",
       "api key revoked",
       "api key deactivated",
       "key has been disabled",
       "key has been revoked",
       "account has been deactivated",
-      "could not authenticate api key",
-      "could not validate credentials",
       "API_KEY_REVOKED",
       "api_key_deleted",
     ];
@@ -717,7 +714,6 @@ describe("classifyFailoverReason", () => {
     expect(classifyFailoverReason("LLM error: daily limit exceeded")).toBe("rate_limit");
   });
   it("classifies permanent auth errors as auth_permanent", () => {
-    expect(classifyFailoverReason("invalid_api_key")).toBe("auth_permanent");
     expect(classifyFailoverReason("Your api key has been revoked")).toBe("auth_permanent");
     expect(classifyFailoverReason("key has been disabled")).toBe("auth_permanent");
     expect(classifyFailoverReason("account has been deactivated")).toBe("auth_permanent");

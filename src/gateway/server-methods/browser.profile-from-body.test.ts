@@ -8,9 +8,13 @@ const { loadConfigMock, isNodeCommandAllowedMock, resolveNodeCommandAllowlistMoc
   }),
 );
 
-vi.mock("../../config/config.js", () => ({
-  loadConfig: loadConfigMock,
-}));
+vi.mock("../../config/config.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../config/config.js")>();
+  return {
+    ...actual,
+    loadConfig: loadConfigMock,
+  };
+});
 
 vi.mock("../node-command-policy.js", () => ({
   isNodeCommandAllowed: isNodeCommandAllowedMock,

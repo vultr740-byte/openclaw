@@ -1,5 +1,6 @@
 import type { FailoverReason } from "../agents/pi-embedded-helpers.js";
 import type { ChannelId } from "../channels/plugins/types.js";
+import type { HookExternalContentSource } from "../security/external-content.js";
 import type { CronJobBase } from "./types-shared.js";
 
 export type CronSchedule =
@@ -13,10 +14,10 @@ export type CronSchedule =
       staggerMs?: number;
     };
 
-export type CronSessionTarget = "main" | "isolated";
+export type CronSessionTarget = "main" | "isolated" | "current" | `session:${string}`;
 export type CronWakeMode = "next-heartbeat" | "now";
 
-export type CronMessageChannel = ChannelId | "last";
+export type CronMessageChannel = ChannelId;
 
 export type CronDeliveryMode = "none" | "announce" | "webhook";
 
@@ -24,9 +25,10 @@ export type CronDelivery = {
   mode: CronDeliveryMode;
   channel?: CronMessageChannel;
   to?: string;
+  /** Explicit thread/topic id for channels that support threaded delivery. */
+  threadId?: string | number;
   /** Explicit channel account id for multi-account setups (e.g. multiple Telegram bots). */
   accountId?: string;
-  threadId?: string | number;
   bestEffort?: boolean;
   /** Separate destination for failure notifications. */
   failureDestination?: CronFailureDestination;
@@ -98,8 +100,13 @@ type CronAgentTurnPayloadFields = {
   thinking?: string;
   timeoutSeconds?: number;
   allowUnsafeExternalContent?: boolean;
+  /** Immutable external hook provenance for async dispatch. */
+  externalContentSource?: HookExternalContentSource;
   /** If true, run with lightweight bootstrap context. */
   lightContext?: boolean;
+  /** Optional tool allow-list; when set, only these tools are sent to the model. */
+  toolsAllow?: string[];
+  /** Back-compat inline delivery flags preserved for older callers/stored jobs. */
   deliver?: boolean;
   channel?: CronMessageChannel;
   to?: string;
@@ -112,7 +119,9 @@ type CronAgentTurnPayload = {
 
 type CronAgentTurnPayloadPatch = {
   kind: "agentTurn";
-} & Partial<CronAgentTurnPayloadFields>;
+} & Partial<Omit<CronAgentTurnPayloadFields, "toolsAllow">> & {
+    toolsAllow?: string[] | null;
+  };
 export type CronJobState = {
   nextRunAtMs?: number;
   runningAtMs?: number;

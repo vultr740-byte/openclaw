@@ -1,53 +1,179 @@
+import fs from "node:fs";
 import { createRequire } from "node:module";
+import { fileURLToPath } from "node:url";
 import { resolveStateDir } from "../../config/paths.js";
-import { createRuntimeChannel } from "./runtime-channel.js";
+import {
+  generateImage as generateRuntimeImage,
+  listRuntimeImageGenerationProviders,
+} from "../../image-generation/runtime.js";
+import {
+  generateMusic as generateRuntimeMusic,
+  listRuntimeMusicGenerationProviders,
+} from "../../music-generation/runtime.js";
+import { RequestScopedSubagentRuntimeError } from "../../plugin-sdk/error-runtime.js";
+import { resolveGlobalSingleton } from "../../shared/global-singleton.js";
+import {
+  createLazyRuntimeMethod,
+  createLazyRuntimeMethodBinder,
+  createLazyRuntimeModule,
+} from "../../shared/lazy-runtime.js";
+import { VERSION } from "../../version.js";
+import {
+  generateVideo as generateRuntimeVideo,
+  listRuntimeVideoGenerationProviders,
+} from "../../video-generation/runtime.js";
+import { listWebSearchProviders, runWebSearch } from "../../web-search/runtime.js";
+import { buildPluginLoaderJitiOptions, resolvePluginLoaderJitiConfig } from "../sdk-alias.js";
+import { createRuntimeAgent } from "./runtime-agent.js";
+import { defineCachedValue } from "./runtime-cache.js";
 import { createRuntimeConfig } from "./runtime-config.js";
 import { createRuntimeEvents } from "./runtime-events.js";
 import { createRuntimeLogging } from "./runtime-logging.js";
 import { createRuntimeMedia } from "./runtime-media.js";
+import { resolveRuntimeModuleCandidates } from "./runtime-module-paths.js";
 import { createRuntimeSystem } from "./runtime-system.js";
-import { createRuntimeTools } from "./runtime-tools.js";
-import type { PluginRuntime } from "./types.js";
+import { createRuntimeTaskFlow } from "./runtime-taskflow.js";
+import { createRuntimeTasks } from "./runtime-tasks.js";
+import type { CreatePluginRuntimeOptions, PluginRuntime } from "./types.js";
 
-let cachedVersion: string | null = null;
-let modelAuthModulePromise: Promise<typeof import("../../agents/model-auth.js")> | undefined;
-let transcribeAudioModulePromise:
-  | Promise<typeof import("../../media-understanding/transcribe-audio.js")>
+export type { CreatePluginRuntimeOptions } from "./types.js";
+
+let runtimeChannelLoader: ReturnType<typeof import("jiti").createJiti> | null | undefined;
+let runtimeChannelFactory:
+  | typeof import("./runtime-channel.js").createRuntimeChannel
+  | null
   | undefined;
-let ttsModulePromise: Promise<typeof import("../../tts/tts.js")> | undefined;
 
-function loadModelAuthModule(): Promise<typeof import("../../agents/model-auth.js")> {
-  return (modelAuthModulePromise ??= import("../../agents/model-auth.js"));
+const loadTtsRuntime = createLazyRuntimeModule(() => import("../../tts/tts.js"));
+const loadMediaUnderstandingRuntime = createLazyRuntimeModule(
+  () => import("../../media-understanding/runtime.js"),
+);
+const loadModelAuthRuntime = createLazyRuntimeModule(
+  () => import("./runtime-model-auth.runtime.js"),
+);
+
+function createRuntimeTts(): PluginRuntime["tts"] {
+  const bindTtsRuntime = createLazyRuntimeMethodBinder(loadTtsRuntime);
+  return {
+    textToSpeech: bindTtsRuntime((runtime) => runtime.textToSpeech),
+    textToSpeechTelephony: bindTtsRuntime((runtime) => runtime.textToSpeechTelephony),
+    listVoices: bindTtsRuntime((runtime) => runtime.listSpeechVoices),
+  };
 }
 
-function loadTranscribeAudioModule(): Promise<
-  typeof import("../../media-understanding/transcribe-audio.js")
-> {
-  return (transcribeAudioModulePromise ??= import("../../media-understanding/transcribe-audio.js"));
+function createRuntimeMediaUnderstandingFacade(): PluginRuntime["mediaUnderstanding"] {
+  const bindMediaUnderstandingRuntime = createLazyRuntimeMethodBinder(
+    loadMediaUnderstandingRuntime,
+  );
+  return {
+    runFile: bindMediaUnderstandingRuntime((runtime) => runtime.runMediaUnderstandingFile),
+    describeImageFile: bindMediaUnderstandingRuntime((runtime) => runtime.describeImageFile),
+    describeImageFileWithModel: bindMediaUnderstandingRuntime(
+      (runtime) => runtime.describeImageFileWithModel,
+    ),
+    describeVideoFile: bindMediaUnderstandingRuntime((runtime) => runtime.describeVideoFile),
+    transcribeAudioFile: bindMediaUnderstandingRuntime((runtime) => runtime.transcribeAudioFile),
+  };
 }
 
-function loadTtsModule(): Promise<typeof import("../../tts/tts.js")> {
-  return (ttsModulePromise ??= import("../../tts/tts.js"));
+function createRuntimeImageGeneration(): PluginRuntime["imageGeneration"] {
+  return {
+    generate: (params) => generateRuntimeImage(params),
+    listProviders: (params) => listRuntimeImageGenerationProviders(params),
+  };
 }
 
-function resolveVersion(): string {
-  if (cachedVersion) {
-    return cachedVersion;
+function createRuntimeVideoGeneration(): PluginRuntime["videoGeneration"] {
+  return {
+    generate: (params) => generateRuntimeVideo(params),
+    listProviders: (params) => listRuntimeVideoGenerationProviders(params),
+  };
+}
+
+function createRuntimeMusicGeneration(): PluginRuntime["musicGeneration"] {
+  return {
+    generate: (params) => generateRuntimeMusic(params),
+    listProviders: (params) => listRuntimeMusicGenerationProviders(params),
+  };
+}
+
+function createRuntimeModelAuth(): PluginRuntime["modelAuth"] {
+  const getApiKeyForModel = createLazyRuntimeMethod(
+    loadModelAuthRuntime,
+    (runtime) => runtime.getApiKeyForModel,
+  );
+  const getRuntimeAuthForModel = createLazyRuntimeMethod(
+    loadModelAuthRuntime,
+    (runtime) => runtime.getRuntimeAuthForModel,
+  );
+  const resolveApiKeyForProvider = createLazyRuntimeMethod(
+    loadModelAuthRuntime,
+    (runtime) => runtime.resolveApiKeyForProvider,
+  );
+  return {
+    getApiKeyForModel: (params) =>
+      getApiKeyForModel({
+        model: params.model,
+        cfg: params.cfg,
+      }),
+    getRuntimeAuthForModel: (params) =>
+      getRuntimeAuthForModel({
+        model: params.model,
+        cfg: params.cfg,
+        workspaceDir: params.workspaceDir,
+      }),
+    resolveApiKeyForProvider: (params) =>
+      resolveApiKeyForProvider({
+        provider: params.provider,
+        cfg: params.cfg,
+      }),
+  };
+}
+
+function getRuntimeChannelLoader(): ReturnType<typeof import("jiti").createJiti> {
+  if (runtimeChannelLoader) {
+    return runtimeChannelLoader;
   }
-  try {
-    const require = createRequire(import.meta.url);
-    const pkg = require("../../../package.json") as { version?: string };
-    cachedVersion = pkg.version ?? "unknown";
-    return cachedVersion;
-  } catch {
-    cachedVersion = "unknown";
-    return cachedVersion;
+  const require = createRequire(import.meta.url);
+  const { createJiti } = require("jiti") as typeof import("jiti");
+  const { tryNative, aliasMap } = resolvePluginLoaderJitiConfig({
+    modulePath: fileURLToPath(import.meta.url),
+    argv1: process.argv[1],
+    moduleUrl: import.meta.url,
+  });
+  runtimeChannelLoader = createJiti(import.meta.url, {
+    ...buildPluginLoaderJitiOptions(aliasMap),
+    tryNative,
+  });
+  return runtimeChannelLoader;
+}
+
+function loadRuntimeChannelFactory(): typeof import("./runtime-channel.js").createRuntimeChannel {
+  if (runtimeChannelFactory) {
+    return runtimeChannelFactory;
   }
+
+  const loader = getRuntimeChannelLoader();
+  for (const candidate of resolveRuntimeModuleCandidates(import.meta.url, [
+    "runtime-channel.js",
+    "runtime-channel.ts",
+  ])) {
+    if (!fs.existsSync(candidate)) {
+      continue;
+    }
+    const mod = loader(candidate) as typeof import("./runtime-channel.js");
+    if (typeof mod?.createRuntimeChannel === "function") {
+      runtimeChannelFactory = mod.createRuntimeChannel;
+      return runtimeChannelFactory;
+    }
+  }
+
+  throw new Error("Plugin runtime channel factory could not be loaded.");
 }
 
 function createUnavailableSubagentRuntime(): PluginRuntime["subagent"] {
   const unavailable = () => {
-    throw new Error("Plugin runtime subagent methods are only available during a gateway request.");
+    throw new RequestScopedSubagentRuntimeError();
   };
   return {
     run: unavailable,
@@ -58,112 +184,112 @@ function createUnavailableSubagentRuntime(): PluginRuntime["subagent"] {
   };
 }
 
-export type CreatePluginRuntimeOptions = {
-  subagent?: PluginRuntime["subagent"];
+const GATEWAY_SUBAGENT_SYMBOL: unique symbol = Symbol.for(
+  "openclaw.plugin.gatewaySubagentRuntime",
+) as unknown as typeof GATEWAY_SUBAGENT_SYMBOL;
+
+type GatewaySubagentState = {
+  subagent: PluginRuntime["subagent"] | undefined;
 };
 
-export function createPluginRuntime(_options: CreatePluginRuntimeOptions = {}): PluginRuntime {
-  let configRuntime: PluginRuntime["config"] | undefined;
-  let systemRuntime: PluginRuntime["system"] | undefined;
-  let mediaRuntime: PluginRuntime["media"] | undefined;
-  let toolsRuntime: PluginRuntime["tools"] | undefined;
-  let channelRuntime: PluginRuntime["channel"] | undefined;
-  let eventsRuntime: PluginRuntime["events"] | undefined;
-  let loggingRuntime: PluginRuntime["logging"] | undefined;
-  let modelAuthRuntime: PluginRuntime["modelAuth"] | undefined;
-  let subagentRuntime: PluginRuntime["subagent"] | undefined;
+const gatewaySubagentState = resolveGlobalSingleton<GatewaySubagentState>(
+  GATEWAY_SUBAGENT_SYMBOL,
+  () => ({
+    subagent: undefined,
+  }),
+);
 
-  const runtime = {} as PluginRuntime;
-  Object.defineProperties(runtime, {
-    version: {
-      value: resolveVersion(),
-      enumerable: true,
-    },
-    config: {
-      get: () => (configRuntime ??= createRuntimeConfig()),
-      enumerable: true,
-    },
-    subagent: {
-      get: () => (subagentRuntime ??= _options.subagent ?? createUnavailableSubagentRuntime()),
-      enumerable: true,
-    },
-    system: {
-      get: () => (systemRuntime ??= createRuntimeSystem()),
-      enumerable: true,
-    },
-    media: {
-      get: () => (mediaRuntime ??= createRuntimeMedia()),
-      enumerable: true,
-    },
-    tts: {
-      value: {
-        textToSpeechTelephony: async (...args) => {
-          const mod = await loadTtsModule();
-          return mod.textToSpeechTelephony(...args);
-        },
-      } satisfies PluginRuntime["tts"],
-      enumerable: true,
-    },
-    stt: {
-      value: {
-        transcribeAudioFile: async (...args) => {
-          const mod = await loadTranscribeAudioModule();
-          return mod.transcribeAudioFile(...args);
-        },
-      } satisfies PluginRuntime["stt"],
-      enumerable: true,
-    },
-    tools: {
-      get: () => (toolsRuntime ??= createRuntimeTools()),
-      enumerable: true,
-    },
-    channel: {
-      // Plugin channels rely on several runtime helpers being synchronously callable
-      // (for example route/session resolution during inbound processing).
-      get: () => (channelRuntime ??= createRuntimeChannel()),
-      enumerable: true,
-    },
-    events: {
-      get: () => (eventsRuntime ??= createRuntimeEvents()),
-      enumerable: true,
-    },
-    logging: {
-      get: () => (loggingRuntime ??= createRuntimeLogging()),
-      enumerable: true,
-    },
-    state: {
-      value: { resolveStateDir } satisfies PluginRuntime["state"],
-      enumerable: true,
-    },
-    modelAuth: {
-      get: () =>
-        (modelAuthRuntime ??= {
-          // Wrap model-auth helpers so plugins cannot steer credential lookups:
-          // - agentDir / store: stripped (prevents reading other agents' stores)
-          // - profileId / preferredProfile: stripped (prevents cross-provider
-          //   credential access via profile steering)
-          // Plugins only specify provider/model; the core auth pipeline picks
-          // the appropriate credential automatically.
-          getApiKeyForModel: async (params) => {
-            const mod = await loadModelAuthModule();
-            return mod.getApiKeyForModel({
-              model: params.model,
-              cfg: params.cfg,
-            });
-          },
-          resolveApiKeyForProvider: async (params) => {
-            const mod = await loadModelAuthModule();
-            return mod.resolveApiKeyForProvider({
-              provider: params.provider,
-              cfg: params.cfg,
-            });
-          },
-        } satisfies PluginRuntime["modelAuth"]),
-      enumerable: true,
+export function setGatewaySubagentRuntime(subagent: PluginRuntime["subagent"]): void {
+  gatewaySubagentState.subagent = subagent;
+}
+
+export function clearGatewaySubagentRuntime(): void {
+  gatewaySubagentState.subagent = undefined;
+}
+
+function createLateBindingSubagent(
+  explicit?: PluginRuntime["subagent"],
+  allowGatewaySubagentBinding = false,
+): PluginRuntime["subagent"] {
+  if (explicit) {
+    return explicit;
+  }
+
+  const unavailable = createUnavailableSubagentRuntime();
+  if (!allowGatewaySubagentBinding) {
+    return unavailable;
+  }
+
+  return new Proxy(unavailable, {
+    get(_target, prop, _receiver) {
+      const resolved = gatewaySubagentState.subagent ?? unavailable;
+      return Reflect.get(resolved, prop, resolved);
     },
   });
+}
 
-  return runtime;
+export function createPluginRuntime(_options: CreatePluginRuntimeOptions = {}): PluginRuntime {
+  const mediaUnderstanding = createRuntimeMediaUnderstandingFacade();
+  const taskFlow = createRuntimeTaskFlow();
+  const tasks = createRuntimeTasks({
+    legacyTaskFlow: taskFlow,
+  });
+  const runtime = {
+    version: VERSION,
+    config: createRuntimeConfig(),
+    agent: createRuntimeAgent(),
+    subagent: createLateBindingSubagent(
+      _options.subagent,
+      _options.allowGatewaySubagentBinding === true,
+    ),
+    system: createRuntimeSystem(),
+    media: createRuntimeMedia(),
+    webSearch: {
+      listProviders: listWebSearchProviders,
+      search: runWebSearch,
+    },
+    events: createRuntimeEvents(),
+    logging: createRuntimeLogging(),
+    state: { resolveStateDir },
+    tasks,
+    taskFlow,
+  } satisfies Omit<
+    PluginRuntime,
+    | "channel"
+    | "tts"
+    | "mediaUnderstanding"
+    | "stt"
+    | "modelAuth"
+    | "imageGeneration"
+    | "videoGeneration"
+    | "musicGeneration"
+  > &
+    Partial<
+      Pick<
+        PluginRuntime,
+        | "channel"
+        | "tts"
+        | "mediaUnderstanding"
+        | "stt"
+        | "modelAuth"
+        | "imageGeneration"
+        | "videoGeneration"
+        | "musicGeneration"
+      >
+    >;
+
+  defineCachedValue(runtime, "channel", () => loadRuntimeChannelFactory()());
+  defineCachedValue(runtime, "tts", createRuntimeTts);
+  defineCachedValue(runtime, "mediaUnderstanding", () => mediaUnderstanding);
+  defineCachedValue(runtime, "stt", () => ({
+    transcribeAudioFile: mediaUnderstanding.transcribeAudioFile,
+  }));
+  defineCachedValue(runtime, "modelAuth", createRuntimeModelAuth);
+  defineCachedValue(runtime, "imageGeneration", createRuntimeImageGeneration);
+  defineCachedValue(runtime, "videoGeneration", createRuntimeVideoGeneration);
+  defineCachedValue(runtime, "musicGeneration", createRuntimeMusicGeneration);
+
+  return runtime as PluginRuntime;
 }
 
 export type { PluginRuntime } from "./types.js";

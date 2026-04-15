@@ -3,8 +3,10 @@ export type BrowserProfileConfig = {
   cdpPort?: number;
   /** CDP URL for this profile (use for remote Chrome). */
   cdpUrl?: string;
+  /** Explicit user data directory for existing-session Chrome MCP attachment. */
+  userDataDir?: string;
   /** Profile driver (default: openclaw). */
-  driver?: "openclaw" | "clawd" | "extension";
+  driver?: "openclaw" | "clawd" | "existing-session" | "extension";
   /** If true, never launch a browser for this profile; only attach. Falls back to browser.attachOnly. */
   attachOnly?: boolean;
   /** Profile color (hex). Auto-assigned at creation. */
@@ -15,10 +17,10 @@ export type BrowserSnapshotDefaults = {
   mode?: "efficient";
 };
 export type BrowserSsrFPolicyConfig = {
-  /** Legacy alias for private-network access. Prefer dangerouslyAllowPrivateNetwork. */
-  allowPrivateNetwork?: boolean;
   /** If true, permit browser navigation to private/internal networks. Default: true */
   dangerouslyAllowPrivateNetwork?: boolean;
+  /** Back-compat alias for dangerouslyAllowPrivateNetwork. */
+  allowPrivateNetwork?: boolean;
   /**
    * Explicitly allowed hostnames (exact-match), including blocked names like localhost.
    * Example: ["localhost", "metadata.internal"]
@@ -60,16 +62,12 @@ export type BrowserConfig = {
   snapshotDefaults?: BrowserSnapshotDefaults;
   /** SSRF policy for browser navigation/open-tab operations. */
   ssrfPolicy?: BrowserSsrFPolicyConfig;
+  /** Host for the browser extension relay bind. */
+  relayBindHost?: string;
   /**
    * Additional Chrome launch arguments.
    * Useful for stealth flags, window size overrides, or custom user-agent strings.
    * Example: ["--window-size=1920,1080", "--disable-infobars"]
    */
   extraArgs?: string[];
-  /**
-   * Bind address for the Chrome extension relay server.
-   * Default: "127.0.0.1". Set to "0.0.0.0" for WSL2 or other environments where
-   * the relay must be reachable from a different network namespace.
-   */
-  relayBindHost?: string;
 };

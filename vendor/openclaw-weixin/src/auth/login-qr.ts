@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { loadConfigRouteTag } from "./accounts.js";
+import { apiGetFetch } from "../api/api.js";
 import { logger } from "../util/logger.js";
 import { redactToken } from "../util/redact.js";
 
@@ -11,16 +11,27 @@ type ActiveLogin = {
   qrcodeUrl: string;
   startedAt: number;
   botToken?: string;
-  status?: "wait" | "scaned" | "confirmed" | "expired";
+  accountId?: string;
+  baseUrl?: string;
+  userId?: string;
+  status?: "wait" | "scaned" | "confirmed" | "expired" | "scaned_but_redirect";
   error?: string;
+  resolvedAt?: number;
+  lastMessage?: string;
+  /** The current effective polling base URL; may be updated on IDC redirect. */
+  currentApiBaseUrl?: string;
 };
 
 const ACTIVE_LOGIN_TTL_MS = 5 * 60_000;
+const TERMINAL_LOGIN_TTL_MS = 10 * 60_000;
 /** Client-side timeout for the long-poll get_qrcode_status request. */
 const QR_LONG_POLL_TIMEOUT_MS = 35_000;
 
 /** Default `bot_type` for ilink get_bot_qrcode / get_qrcode_status (this channel build). */
 export const DEFAULT_ILINK_BOT_TYPE = "3";
+
+/** Fixed API base URL for all QR code requests. */
+const FIXED_BASE_URL = "https://ilinkai.weixin.qq.com";
 
 const activeLogins = new Map<string, ActiveLogin>();
 
@@ -30,80 +41,74 @@ interface QRCodeResponse {
 }
 
 interface StatusResponse {
-  status: "wait" | "scaned" | "confirmed" | "expired";
+  status: "wait" | "scaned" | "confirmed" | "expired" | "scaned_but_redirect";
   bot_token?: string;
   ilink_bot_id?: string;
   baseurl?: string;
   /** The user ID of the person who scanned the QR code. */
   ilink_user_id?: string;
+  /** New host to redirect polling to when status is scaned_but_redirect. */
+  redirect_host?: string;
 }
 
 function isLoginFresh(login: ActiveLogin): boolean {
   return Date.now() - login.startedAt < ACTIVE_LOGIN_TTL_MS;
 }
 
+function isTerminalLogin(login: ActiveLogin): boolean {
+  return Boolean(login.error) || login.status === "confirmed" || login.status === "expired";
+}
+
+function isRetainedLogin(login: ActiveLogin): boolean {
+  if (!isTerminalLogin(login)) {
+    return isLoginFresh(login);
+  }
+  const resolvedAt = login.resolvedAt ?? login.startedAt;
+  return Date.now() - resolvedAt < TERMINAL_LOGIN_TTL_MS;
+}
+
 /** Remove all expired entries from the activeLogins map to prevent memory leaks. */
 function purgeExpiredLogins(): void {
   for (const [id, login] of activeLogins) {
-    if (!isLoginFresh(login)) {
+    if (!isRetainedLogin(login)) {
       activeLogins.delete(id);
     }
   }
 }
 
 async function fetchQRCode(apiBaseUrl: string, botType: string): Promise<QRCodeResponse> {
-  const base = apiBaseUrl.endsWith("/") ? apiBaseUrl : `${apiBaseUrl}/`;
-  const url = new URL(`ilink/bot/get_bot_qrcode?bot_type=${encodeURIComponent(botType)}`, base);
-  logger.info(`Fetching QR code from: ${url.toString()}`);
-
-  const headers: Record<string, string> = {};
-  const routeTag = loadConfigRouteTag();
-  if (routeTag) {
-    headers.SKRouteTag = routeTag;
-  }
-
-  const response = await fetch(url.toString(), { headers });
-  if (!response.ok) {
-    const body = await response.text().catch(() => "(unreadable)");
-    logger.error(`QR code fetch failed: ${response.status} ${response.statusText} body=${body}`);
-    throw new Error(`Failed to fetch QR code: ${response.status} ${response.statusText}`);
-  }
-  return await response.json();
+  logger.info(`Fetching QR code from: ${apiBaseUrl} bot_type=${botType}`);
+  const rawText = await apiGetFetch({
+    baseUrl: apiBaseUrl,
+    endpoint: `ilink/bot/get_bot_qrcode?bot_type=${encodeURIComponent(botType)}`,
+    label: "fetchQRCode",
+  });
+  return JSON.parse(rawText) as QRCodeResponse;
 }
 
-async function pollQRStatus(apiBaseUrl: string, qrcode: string): Promise<StatusResponse> {
-  const base = apiBaseUrl.endsWith("/") ? apiBaseUrl : `${apiBaseUrl}/`;
-  const url = new URL(`ilink/bot/get_qrcode_status?qrcode=${encodeURIComponent(qrcode)}`, base);
-  logger.debug(`Long-poll QR status from: ${url.toString()}`);
-
-  const headers: Record<string, string> = {
-    "iLink-App-ClientVersion": "1",
-  };
-  const routeTag = loadConfigRouteTag();
-  if (routeTag) {
-    headers.SKRouteTag = routeTag;
-  }
-
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), QR_LONG_POLL_TIMEOUT_MS);
+async function pollQRStatus(
+  apiBaseUrl: string,
+  qrcode: string,
+  timeoutMs = QR_LONG_POLL_TIMEOUT_MS,
+): Promise<StatusResponse> {
+  logger.debug(`Long-poll QR status from: ${apiBaseUrl} qrcode=***`);
   try {
-    const response = await fetch(url.toString(), { headers, signal: controller.signal });
-    clearTimeout(timer);
-    logger.debug(`pollQRStatus: HTTP ${response.status}, reading body...`);
-    const rawText = await response.text();
+    const rawText = await apiGetFetch({
+      baseUrl: apiBaseUrl,
+      endpoint: `ilink/bot/get_qrcode_status?qrcode=${encodeURIComponent(qrcode)}`,
+      timeoutMs,
+      label: "pollQRStatus",
+    });
     logger.debug(`pollQRStatus: body=${rawText.substring(0, 200)}`);
-    if (!response.ok) {
-      logger.error(`QR status poll failed: ${response.status} ${response.statusText} body=${rawText}`);
-      throw new Error(`Failed to poll QR status: ${response.status} ${response.statusText}`);
-    }
     return JSON.parse(rawText) as StatusResponse;
   } catch (err) {
-    clearTimeout(timer);
     if (err instanceof Error && err.name === "AbortError") {
-      logger.debug(`pollQRStatus: client-side timeout after ${QR_LONG_POLL_TIMEOUT_MS}ms, returning wait`);
+      logger.debug(`pollQRStatus: client-side timeout after ${timeoutMs}ms, returning wait`);
       return { status: "wait" };
     }
-    throw err;
+    // 网关超时（如 Cloudflare 524）或其他网络错误，视为等待状态继续轮询
+    logger.warn(`pollQRStatus: network/gateway error, will retry: ${String(err)}`);
+    return { status: "wait" };
   }
 }
 
@@ -123,20 +128,122 @@ export type WeixinQrWaitResult = {
   message: string;
 };
 
+export type WeixinQrLoginStatus =
+  | "missing"
+  | "qr_ready"
+  | "connected"
+  | "expired"
+  | "error";
+
+export type WeixinQrStatusResult = {
+  status: WeixinQrLoginStatus;
+  connected: boolean;
+  message: string;
+  qrcodeUrl?: string;
+  sessionKey?: string;
+  expiresAt?: number;
+  ttlMs?: number;
+};
+
+export type WeixinQrPolledStatusResult = WeixinQrStatusResult & {
+  botToken?: string;
+  accountId?: string;
+  baseUrl?: string;
+  userId?: string;
+};
+
+function buildLoginExpiry(login: ActiveLogin): { expiresAt?: number; ttlMs?: number } {
+  if (login.status === "confirmed") {
+    return {};
+  }
+  const expiresAt = login.startedAt + ACTIVE_LOGIN_TTL_MS;
+  return {
+    expiresAt,
+    ttlMs: Math.max(0, expiresAt - Date.now()),
+  };
+}
+
+function buildLoginSnapshot(login: ActiveLogin): WeixinQrPolledStatusResult {
+  const { expiresAt, ttlMs } = buildLoginExpiry(login);
+
+  if (login.error) {
+    return {
+      status: "error",
+      connected: false,
+      message: login.error,
+      qrcodeUrl: login.qrcodeUrl,
+      sessionKey: login.sessionKey,
+      expiresAt,
+      ttlMs,
+    };
+  }
+
+  if (login.status === "confirmed" && login.botToken && login.accountId) {
+    return {
+      status: "connected",
+      connected: true,
+      message: login.lastMessage ?? "✅ 与微信连接成功！",
+      sessionKey: login.sessionKey,
+      botToken: login.botToken,
+      accountId: login.accountId,
+      baseUrl: login.baseUrl,
+      userId: login.userId,
+    };
+  }
+
+  if (login.status === "expired") {
+    return {
+      status: "expired",
+      connected: false,
+      message: login.lastMessage ?? "二维码已过期，请重新生成。",
+      qrcodeUrl: login.qrcodeUrl,
+      sessionKey: login.sessionKey,
+      expiresAt,
+      ttlMs: 0,
+    };
+  }
+
+  return {
+    status: "qr_ready",
+    connected: false,
+    message: login.lastMessage ?? "使用微信扫描以下二维码，以完成连接。",
+    qrcodeUrl: login.qrcodeUrl,
+    sessionKey: login.sessionKey,
+    expiresAt,
+    ttlMs,
+  };
+}
+
+function setLoginError(login: ActiveLogin, message: string): WeixinQrPolledStatusResult {
+  login.error = message;
+  login.resolvedAt = Date.now();
+  login.lastMessage = message;
+  return buildLoginSnapshot(login);
+}
+
 export async function startWeixinLoginWithQr(opts: {
   verbose?: boolean;
   timeoutMs?: number;
   force?: boolean;
   accountId?: string;
+  sessionKey?: string;
   apiBaseUrl: string;
   botType?: string;
 }): Promise<WeixinQrStartResult> {
-  const sessionKey = opts.accountId || randomUUID();
+  const sessionKey = opts.sessionKey || opts.accountId || randomUUID();
 
   purgeExpiredLogins();
 
   const existing = activeLogins.get(sessionKey);
-  if (!opts.force && existing && isLoginFresh(existing) && existing.qrcodeUrl) {
+  if (
+    !opts.force &&
+    existing &&
+    isLoginFresh(existing) &&
+    existing.qrcodeUrl &&
+    !existing.error &&
+    existing.status !== "confirmed" &&
+    existing.status !== "expired"
+  ) {
     return {
       qrcodeUrl: existing.qrcodeUrl,
       message: "二维码已就绪，请使用微信扫描。",
@@ -148,15 +255,7 @@ export async function startWeixinLoginWithQr(opts: {
     const botType = opts.botType || DEFAULT_ILINK_BOT_TYPE;
     logger.info(`Starting Weixin login with bot_type=${botType}`);
 
-    if (!opts.apiBaseUrl) {
-      return {
-        message:
-          "No baseUrl configured. Add channels.openclaw-weixin.baseUrl to your config before logging in.",
-        sessionKey,
-      };
-    }
-
-    const qrResponse = await fetchQRCode(opts.apiBaseUrl, botType);
+    const qrResponse = await fetchQRCode(FIXED_BASE_URL, botType);
     logger.info(
       `QR code received, qrcode=${redactToken(qrResponse.qrcode)} imgContentLen=${qrResponse.qrcode_img_content?.length ?? 0}`,
     );
@@ -183,6 +282,107 @@ export async function startWeixinLoginWithQr(opts: {
       message: `Failed to start login: ${String(err)}`,
       sessionKey,
     };
+  }
+}
+
+export function getWeixinLoginStatus(opts: { sessionKey: string }): WeixinQrStatusResult {
+  purgeExpiredLogins();
+
+  const activeLogin = activeLogins.get(opts.sessionKey);
+  if (!activeLogin) {
+    return {
+      status: "missing",
+      connected: false,
+      message: "当前没有进行中的登录，请先发起登录。",
+      sessionKey: opts.sessionKey,
+    };
+  }
+  return buildLoginSnapshot(activeLogin);
+}
+
+export async function pollWeixinLoginStatus(opts: {
+  sessionKey: string;
+  timeoutMs?: number;
+}): Promise<WeixinQrPolledStatusResult> {
+  purgeExpiredLogins();
+
+  const activeLogin = activeLogins.get(opts.sessionKey);
+  if (!activeLogin) {
+    return {
+      status: "missing",
+      connected: false,
+      message: "当前没有进行中的登录，请先发起登录。",
+      sessionKey: opts.sessionKey,
+    };
+  }
+
+  if (!isLoginFresh(activeLogin) && !isTerminalLogin(activeLogin)) {
+    activeLogin.status = "expired";
+    activeLogin.resolvedAt = Date.now();
+    activeLogin.lastMessage = "二维码已过期，请重新生成。";
+    return buildLoginSnapshot(activeLogin);
+  }
+
+  if (isTerminalLogin(activeLogin)) {
+    return buildLoginSnapshot(activeLogin);
+  }
+
+  try {
+    const currentBaseUrl = activeLogin.currentApiBaseUrl ?? FIXED_BASE_URL;
+    const statusResponse = await pollQRStatus(
+      currentBaseUrl,
+      activeLogin.qrcode,
+      Math.max(250, opts.timeoutMs ?? 1500),
+    );
+    logger.debug(
+      `pollWeixinLoginStatus: status=${statusResponse.status} hasBotToken=${Boolean(statusResponse.bot_token)} hasBotId=${Boolean(statusResponse.ilink_bot_id)}`,
+    );
+    activeLogin.status = statusResponse.status;
+
+    switch (statusResponse.status) {
+      case "wait":
+        activeLogin.lastMessage = "使用微信扫描以下二维码，以完成连接。";
+        return buildLoginSnapshot(activeLogin);
+      case "scaned":
+        activeLogin.lastMessage = "已扫码，请在微信中完成确认。";
+        return buildLoginSnapshot(activeLogin);
+      case "scaned_but_redirect": {
+        const redirectHost = statusResponse.redirect_host;
+        if (redirectHost) {
+          activeLogin.currentApiBaseUrl = `https://${redirectHost}`;
+          logger.info(
+            `pollWeixinLoginStatus: IDC redirect, switching polling host to ${redirectHost}`,
+          );
+        }
+        activeLogin.lastMessage = "已扫码，正在切换微信服务节点。";
+        return buildLoginSnapshot(activeLogin);
+      }
+      case "expired":
+        activeLogin.resolvedAt = Date.now();
+        activeLogin.lastMessage = "二维码已过期，请重新生成。";
+        return buildLoginSnapshot(activeLogin);
+      case "confirmed":
+        if (!statusResponse.ilink_bot_id) {
+          return setLoginError(activeLogin, "登录失败：服务器未返回 ilink_bot_id。");
+        }
+        if (!statusResponse.bot_token) {
+          return setLoginError(activeLogin, "登录失败：服务器未返回 bot token。");
+        }
+
+        activeLogin.botToken = statusResponse.bot_token;
+        activeLogin.accountId = statusResponse.ilink_bot_id;
+        activeLogin.baseUrl = statusResponse.baseurl;
+        activeLogin.userId = statusResponse.ilink_user_id;
+        activeLogin.resolvedAt = Date.now();
+        activeLogin.lastMessage = "✅ 与微信连接成功！";
+        logger.info(
+          `✅ Login confirmed! ilink_bot_id=${statusResponse.ilink_bot_id} ilink_user_id=${redactToken(statusResponse.ilink_user_id)}`,
+        );
+        return buildLoginSnapshot(activeLogin);
+    }
+  } catch (err) {
+    logger.error(`pollWeixinLoginStatus failed: ${String(err)}`);
+    return setLoginError(activeLogin, `Login failed: ${String(err)}`);
   }
 }
 
@@ -219,22 +419,25 @@ export async function waitForWeixinLogin(opts: {
   let scannedPrinted = false;
   let qrRefreshCount = 1;
 
+  // Initialize the effective polling base URL; may be updated on IDC redirect.
+  activeLogin.currentApiBaseUrl = FIXED_BASE_URL;
+
   logger.info("Starting to poll QR code status...");
 
   while (Date.now() < deadline) {
     try {
-      const statusResponse = await pollQRStatus(opts.apiBaseUrl, activeLogin.qrcode);
-      logger.debug(`pollQRStatus: status=${statusResponse.status} hasBotToken=${Boolean(statusResponse.bot_token)} hasBotId=${Boolean(statusResponse.ilink_bot_id)}`);
-      activeLogin.status = statusResponse.status;
+      const polled = await pollWeixinLoginStatus({
+        sessionKey: opts.sessionKey,
+        timeoutMs: QR_LONG_POLL_TIMEOUT_MS,
+      });
+      activeLogin = activeLogins.get(opts.sessionKey) ?? activeLogin;
 
-      switch (statusResponse.status) {
-        case "wait":
+      switch (polled.status) {
+        case "qr_ready":
           if (opts.verbose) {
             process.stdout.write(".");
           }
-          break;
-        case "scaned":
-          if (!scannedPrinted) {
+          if (activeLogin?.lastMessage === "已扫码，请在微信中完成确认。" && !scannedPrinted) {
             process.stdout.write("\n👀 已扫码，在微信继续操作...\n");
             scannedPrinted = true;
           }
@@ -259,10 +462,14 @@ export async function waitForWeixinLogin(opts: {
 
           try {
             const botType = opts.botType || DEFAULT_ILINK_BOT_TYPE;
-            const qrResponse = await fetchQRCode(opts.apiBaseUrl, botType);
+            const qrResponse = await fetchQRCode(FIXED_BASE_URL, botType);
             activeLogin.qrcode = qrResponse.qrcode;
             activeLogin.qrcodeUrl = qrResponse.qrcode_img_content;
             activeLogin.startedAt = Date.now();
+            activeLogin.status = "wait";
+            activeLogin.error = undefined;
+            activeLogin.resolvedAt = undefined;
+            activeLogin.lastMessage = "使用微信扫描以下二维码，以完成连接。";
             scannedPrinted = false;
             logger.info(`waitForWeixinLogin: new QR code obtained qrcode=${redactToken(qrResponse.qrcode)}`);
             process.stdout.write(`🔄 新二维码已生成，请重新扫描\n\n`);
@@ -274,7 +481,7 @@ export async function waitForWeixinLogin(opts: {
             } catch {
               process.stdout.write(`二维码未加载成功，请用浏览器打开以下链接扫码：\n`);
               process.stdout.write(`${qrResponse.qrcode_img_content}\n`);
-            }
+            }          
           } catch (refreshErr) {
             logger.error(`waitForWeixinLogin: failed to refresh QR code: ${String(refreshErr)}`);
             activeLogins.delete(opts.sessionKey);
@@ -285,34 +492,26 @@ export async function waitForWeixinLogin(opts: {
           }
           break;
         }
-        case "confirmed": {
-          if (!statusResponse.ilink_bot_id) {
-            activeLogins.delete(opts.sessionKey);
-            logger.error("Login confirmed but ilink_bot_id missing from response");
-            return {
-              connected: false,
-              message: "登录失败：服务器未返回 ilink_bot_id。",
-            };
-          }
-
-          activeLogin.botToken = statusResponse.bot_token;
-          activeLogins.delete(opts.sessionKey);
-
-          logger.info(
-            `✅ Login confirmed! ilink_bot_id=${statusResponse.ilink_bot_id} ilink_user_id=${redactToken(statusResponse.ilink_user_id)}`,
-          );
-
+        case "connected":
           return {
             connected: true,
-            botToken: statusResponse.bot_token,
-            accountId: statusResponse.ilink_bot_id,
-            baseUrl: statusResponse.baseurl,
-            userId: statusResponse.ilink_user_id,
-            message: "✅ 与微信连接成功！",
+            botToken: polled.botToken,
+            accountId: polled.accountId,
+            baseUrl: polled.baseUrl,
+            userId: polled.userId,
+            message: polled.message,
           };
-        }
+        case "error":
+          return {
+            connected: false,
+            message: polled.message,
+          };
+        case "missing":
+          return {
+            connected: false,
+            message: polled.message,
+          };
       }
-
     } catch (err) {
       logger.error(`Error polling QR status: ${String(err)}`);
       activeLogins.delete(opts.sessionKey);

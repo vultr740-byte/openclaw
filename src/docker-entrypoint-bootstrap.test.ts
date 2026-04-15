@@ -407,19 +407,47 @@ describe("docker-entrypoint weixin slim bootstrap", () => {
     expect(nextConfig.cron?.enabled).toBe(true);
     expect(nextConfig.acp?.enabled).toBe(false);
     expect(nextConfig.acp?.dispatch?.enabled ?? false).toBe(false);
-    expect(nextConfig.channels?.telegram?.enabled).toBe(false);
+    expect(nextConfig.channels?.telegram).toBeUndefined();
     expect(nextConfig.channels?.["openclaw-weixin"]).toEqual({
       enabled: true,
     });
     expect(nextConfig.plugins?.enabled).toBe(true);
     expect(nextConfig.plugins?.allow).toEqual(["openclaw-weixin"]);
     expect(nextConfig.plugins?.slots?.memory).toBe("none");
-    expect(nextConfig.plugins?.entries?.telegram?.enabled).toBe(false);
-    expect(nextConfig.plugins?.entries?.acpx?.enabled).toBe(false);
+    expect(nextConfig.plugins?.entries?.telegram).toBeUndefined();
+    expect(nextConfig.plugins?.entries?.acpx).toBeUndefined();
     expect(nextConfig.plugins?.entries?.["openclaw-weixin"]?.enabled).toBe(true);
     expect(nextConfig.gateway?.controlUi?.allowedOrigins).toEqual([
       "https://openclaw-production-1691.up.railway.app",
     ]);
+  });
+});
+
+describe("docker-entrypoint bundled plugin discovery", () => {
+  it("points weixin bootstrap at the vendored bundled plugin directory by default", () => {
+    const expectedBundledPluginsDir = path.join(process.cwd(), "vendor");
+    const result = runEntrypointPrelude({
+      env: {
+        OPENCLAW_BOOTSTRAP_CHANNEL: "weixin",
+      },
+      input: 'printf "%s\\n" "${OPENCLAW_BUNDLED_PLUGINS_DIR:-}"',
+    });
+
+    expect(result.status, result.stderr || result.stdout).toBe(0);
+    expect(result.stdout.trim()).toBe(expectedBundledPluginsDir);
+  });
+
+  it("does not override an explicit bundled plugin directory", () => {
+    const result = runEntrypointPrelude({
+      env: {
+        OPENCLAW_BOOTSTRAP_CHANNEL: "weixin",
+        OPENCLAW_BUNDLED_PLUGINS_DIR: "/custom/bundled",
+      },
+      input: 'printf "%s\\n" "${OPENCLAW_BUNDLED_PLUGINS_DIR:-}"',
+    });
+
+    expect(result.status, result.stderr || result.stdout).toBe(0);
+    expect(result.stdout.trim()).toBe("/custom/bundled");
   });
 });
 
@@ -450,6 +478,7 @@ describe("docker-entrypoint telegram slim bootstrap", () => {
       browser?: { enabled?: boolean };
       approvals?: { exec?: { enabled?: boolean } };
       canvasHost?: { enabled?: boolean };
+      cron?: { enabled?: boolean };
       acp?: { enabled?: boolean; dispatch?: { enabled?: boolean } };
       agents?: { defaults?: { maxConcurrent?: number; subagents?: { maxConcurrent?: number } } };
       channels?: Record<string, { enabled?: boolean; dmPolicy?: string; allowFrom?: unknown }>;
@@ -465,6 +494,7 @@ describe("docker-entrypoint telegram slim bootstrap", () => {
     expect(nextConfig.browser?.enabled).toBe(false);
     expect(nextConfig.approvals?.exec?.enabled).toBe(false);
     expect(nextConfig.canvasHost?.enabled).toBe(false);
+    expect(nextConfig.cron?.enabled).toBe(true);
     expect(nextConfig.acp?.enabled).toBe(false);
     expect(nextConfig.acp?.dispatch?.enabled ?? false).toBe(false);
     expect(nextConfig.agents?.defaults?.maxConcurrent).toBe(4);

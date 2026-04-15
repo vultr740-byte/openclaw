@@ -501,6 +501,7 @@ function resolveOpenAICompat(
     openRouterRouting: {},
     vercelGatewayRouting: {},
     supportsStrictMode: true,
+    zaiToolStream: false,
   };
 
   const compat = model.compat ?? undefined;
@@ -522,6 +523,7 @@ function resolveOpenAICompat(
     openRouterRouting: compat.openRouterRouting ?? {},
     vercelGatewayRouting: compat.vercelGatewayRouting ?? detected.vercelGatewayRouting,
     supportsStrictMode: compat.supportsStrictMode ?? detected.supportsStrictMode,
+    zaiToolStream: compat.zaiToolStream ?? detected.zaiToolStream,
   };
 }
 

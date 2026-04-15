@@ -1,8 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
 
-import { normalizeAccountId } from "openclaw/plugin-sdk";
-import type { OpenClawConfig } from "openclaw/plugin-sdk";
+import { normalizeAccountId } from "openclaw/plugin-sdk/account-id";
+import type { OpenClawConfig } from "openclaw/plugin-sdk/core";
 
 import { getWeixinRuntime } from "../runtime.js";
 import { resolveStateDir } from "../storage/state-dir.js";
@@ -291,9 +291,31 @@ export function loadConfigRouteTag(accountId?: string): string | undefined {
 }
 
 /**
- * No-op stub — config reload is now handled externally via `openclaw gateway restart`.
+ * Bump `channels.openclaw-weixin.channelConfigUpdatedAt` in openclaw.json on each successful login
+ * so the gateway reloads config from disk (no empty `accounts: {}` placeholder).
  */
-export async function triggerWeixinChannelReload(): Promise<void> {}
+export async function triggerWeixinChannelReload(): Promise<void> {
+  try {
+    const { loadConfig, writeConfigFile } = await import("openclaw/plugin-sdk/config-runtime");
+    const cfg = loadConfig();
+    const channels = (cfg.channels ?? {}) as Record<string, unknown>;
+    const existing = (channels["openclaw-weixin"] as Record<string, unknown> | undefined) ?? {};
+    const updated: OpenClawConfig = {
+      ...cfg,
+      channels: {
+        ...channels,
+        "openclaw-weixin": {
+          ...existing,
+          channelConfigUpdatedAt: new Date().toISOString(),
+        },
+      },
+    };
+    await writeConfigFile(updated);
+    logger.info("triggerWeixinChannelReload: wrote channel config to openclaw.json");
+  } catch (err) {
+    logger.warn(`triggerWeixinChannelReload: failed to update config: ${String(err)}`);
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Account resolution (merge config + stored credentials)
@@ -320,6 +342,8 @@ type WeixinAccountConfig = {
 
 type WeixinSectionConfig = WeixinAccountConfig & {
   accounts?: Record<string, WeixinAccountConfig>;
+  /** Written on each successful login; see triggerWeixinChannelReload. */
+  channelConfigUpdatedAt?: string;
 };
 
 /** List accountIds from the index file (written at QR login). */

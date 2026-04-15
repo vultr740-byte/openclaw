@@ -95,7 +95,7 @@ describe("zaloPlugin outbound sendPayload", () => {
     // textChunkLimit is 2000 with chunkTextForOutbound, so it should split
     expect(mockedSend.mock.calls.length).toBeGreaterThanOrEqual(2);
     for (const call of mockedSend.mock.calls) {
-      expect((call[1] as string).length).toBeLessThanOrEqual(2000);
+      expect(call[1].length).toBeLessThanOrEqual(2000);
     }
     expect(result).toMatchObject({ channel: "zalo" });
   });

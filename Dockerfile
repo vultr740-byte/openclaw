@@ -40,7 +40,13 @@ RUN chmod +x /usr/local/bin/openclaw-entrypoint
 USER node
 # Reduce OOM risk on low-memory hosts during dependency installation.
 # Docker builds on small VMs may otherwise fail with "Killed" (exit 137).
-RUN NODE_OPTIONS=--max-old-space-size=2048 pnpm install --frozen-lockfile
+# Some lockfile entries resolve GitHub sources to git@github.com:... even when
+# the repository is publicly readable over HTTPS. GitHub-hosted Docker builders
+# do not have interactive SSH trust/bootstrap, so rewrite those clones to HTTPS
+# to preserve the historical preview-image build path documented in .local.
+RUN git config --global --add url."https://github.com/".insteadOf git@github.com: && \
+    git config --global --add url."https://github.com/".insteadOf ssh://git@github.com/ && \
+    NODE_OPTIONS=--max-old-space-size=2048 pnpm install --frozen-lockfile
 
 # Optionally install Chromium and Xvfb for browser automation.
 # Build with: docker build --build-arg OPENCLAW_INSTALL_BROWSER=1 ...
@@ -103,7 +109,9 @@ RUN for dir in /app/extensions /app/.agent /app/.agents; do \
         find "$dir" -type f -exec chmod 644 {} +; \
       fi; \
     done
-RUN pnpm build
+# Use the Docker-specific build pipeline to avoid unnecessary type-only build
+# work in image builds, and give Node enough heap for the bundle step.
+RUN NODE_OPTIONS=--max-old-space-size=4096 pnpm build:docker
 # Optionally skip Control UI assets in Docker builds.
 # Default to skipping; set OPENCLAW_BUILD_UI=1 to include Control UI assets.
 ARG OPENCLAW_BUILD_UI="0"

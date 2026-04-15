@@ -71,11 +71,7 @@ export function createFollowupTool(opts?: {
 
       if (action === "cancel") {
         const jobId = readStringParam(params, "jobId", { required: true, label: "jobId" });
-        const removed = await callGatewayTool<{ removed?: boolean }>(
-          "cron.remove",
-          {},
-          { id: jobId },
-        );
+        const removed = await callGatewayTool("cron.remove", {}, { id: jobId });
         return jsonResult({ status: "ok", removed: Boolean(removed?.removed), jobId });
       }
 
@@ -145,7 +141,7 @@ export function createFollowupTool(opts?: {
         },
       };
 
-      const created = await callGatewayTool<{ id?: string }>("cron.add", {}, job);
+      const created = await callGatewayTool("cron.add", {}, job);
       return jsonResult({
         status: "scheduled",
         jobId: created?.id,

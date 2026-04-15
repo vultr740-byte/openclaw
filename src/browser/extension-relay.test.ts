@@ -214,7 +214,7 @@ describe("chrome extension relay server", () => {
     }).then((r) => r.json())) as {
       webSocketDebuggerUrl?: string;
     };
-    expect(String(v2.webSocketDebuggerUrl ?? "")).toContain(`/cdp`);
+    expect(v2.webSocketDebuggerUrl ?? "").toContain(`/cdp`);
 
     ext.close();
   });
@@ -430,7 +430,7 @@ describe("chrome extension relay server", () => {
     }).then((r) => r.json())) as {
       webSocketDebuggerUrl?: string;
     };
-    expect(String(version.webSocketDebuggerUrl ?? "")).toContain("/cdp");
+    expect(version.webSocketDebuggerUrl ?? "").toContain("/cdp");
 
     const cdp = new WebSocket(`ws://127.0.0.1:${port}/cdp`, {
       headers: relayAuthHeaders(`ws://127.0.0.1:${port}/cdp`),
@@ -582,7 +582,7 @@ describe("chrome extension relay server", () => {
     ];
     expect(token).toBeTruthy();
     const ext = new WebSocket(
-      `ws://127.0.0.1:${sharedPort}/extension?token=${encodeURIComponent(String(token))}`,
+      `ws://127.0.0.1:${sharedPort}/extension?token=${encodeURIComponent(token)}`,
     );
     await waitForOpen(ext);
     ext.close();
@@ -593,9 +593,7 @@ describe("chrome extension relay server", () => {
 
     const token = relayAuthHeaders(sharedUrl)["x-openclaw-relay-token"];
     expect(token).toBeTruthy();
-    const versionRes = await fetch(
-      `${sharedUrl}/json/version?token=${encodeURIComponent(String(token))}`,
-    );
+    const versionRes = await fetch(`${sharedUrl}/json/version?token=${encodeURIComponent(token)}`);
     expect(versionRes.status).toBe(200);
   });
 

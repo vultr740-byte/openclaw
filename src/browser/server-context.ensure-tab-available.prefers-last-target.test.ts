@@ -6,7 +6,6 @@ import { createBrowserRouteContext } from "./server-context.js";
 
 function makeBrowserState(): BrowserServerState {
   return {
-    // oxlint-disable-next-line typescript/no-explicit-any
     server: null as any,
     port: 0,
     resolved: {

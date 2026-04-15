@@ -1,29 +1,18 @@
-import { afterEach, beforeEach, vi } from "vitest";
-import * as ssrf from "../../infra/net/ssrf.js";
+import type { LookupFn } from "../../infra/net/ssrf.js";
+import { normalizeLowercaseStringOrEmpty } from "../../shared/string-coerce.js";
 
-export function installWebFetchSsrfHarness() {
-  const lookupMock = vi.fn();
-  const resolvePinnedHostnameWithPolicy = ssrf.resolvePinnedHostnameWithPolicy;
-  const priorFetch = global.fetch;
-
-  beforeEach(() => {
-    lookupMock.mockResolvedValue([{ address: "93.184.216.34", family: 4 }]);
-    vi.spyOn(ssrf, "resolvePinnedHostnameWithPolicy").mockImplementation((hostname, params) =>
-      resolvePinnedHostnameWithPolicy(hostname, {
-        ...params,
-        lookupFn: lookupMock,
-      }),
-    );
-  });
-
-  afterEach(() => {
-    global.fetch = priorFetch;
-    lookupMock.mockReset();
-    vi.restoreAllMocks();
-  });
+export function makeFetchHeaders(map: Record<string, string>): {
+  get: (key: string) => string | null;
+} {
+  return {
+    get: (key) => map[normalizeLowercaseStringOrEmpty(key)] ?? null,
+  };
 }
 
-export function createBaseWebFetchToolConfig(opts?: { maxResponseBytes?: number }): {
+export function createBaseWebFetchToolConfig(opts?: {
+  maxResponseBytes?: number;
+  lookupFn?: LookupFn;
+}): {
   config: {
     tools: {
       web: {
@@ -35,6 +24,7 @@ export function createBaseWebFetchToolConfig(opts?: { maxResponseBytes?: number 
       };
     };
   };
+  lookupFn?: LookupFn;
 } {
   return {
     config: {
@@ -48,5 +38,6 @@ export function createBaseWebFetchToolConfig(opts?: { maxResponseBytes?: number 
         },
       },
     },
+    ...(opts?.lookupFn ? { lookupFn: opts.lookupFn } : {}),
   };
 }

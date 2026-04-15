@@ -1,34 +1,25 @@
+import { createLazyFacadeArrayValue } from "./facade-loader.js";
+import { loadBundledPluginPublicSurfaceModuleSync } from "./facade-loader.js";
+
+type FacadeModule = typeof import("@openclaw/telegram/contract-api.js");
+
+function loadFacadeModule(): FacadeModule {
+  return loadBundledPluginPublicSurfaceModuleSync<FacadeModule>({
+    dirName: "telegram",
+    artifactBasename: "contract-api.js",
+  });
+}
+
 export type {
   ChannelAccountSnapshot,
   ChannelGatewayContext,
   ChannelMessageActionAdapter,
 } from "../channels/plugins/types.js";
-export type { ChannelPlugin } from "../channels/plugins/types.plugin.js";
 export type { OpenClawConfig } from "../config/config.js";
-export type { PluginRuntime } from "../plugins/runtime/types.js";
-export type { OpenClawPluginApi } from "../plugins/types.js";
 export type { InspectedTelegramAccount } from "../telegram/account-inspect.js";
 export type { ResolvedTelegramAccount } from "../telegram/accounts.js";
 export type { TelegramProbe } from "../telegram/probe.js";
-
-export { emptyPluginConfigSchema } from "../plugins/config-schema.js";
-
-export { DEFAULT_ACCOUNT_ID, normalizeAccountId } from "../routing/session-key.js";
-
-export {
-  applyAccountNameToChannelSection,
-  migrateBaseNameToDefaultAccount,
-} from "../channels/plugins/setup-helpers.js";
-export { buildChannelConfigSchema } from "../channels/plugins/config-schema.js";
-export {
-  deleteAccountFromConfigSection,
-  clearAccountEntryFields,
-  setAccountEnabledInConfigSection,
-} from "../channels/plugins/config-helpers.js";
-export { formatPairingApproveHint } from "../channels/plugins/helpers.js";
-export { PAIRING_APPROVED_MESSAGE } from "../channels/plugins/pairing-message.js";
-
-export { getChatChannelMeta } from "../channels/registry.js";
+export * from "./channel-plugin-common.js";
 
 export {
   listTelegramAccountIds,
@@ -53,7 +44,18 @@ export {
   parseTelegramThreadId,
 } from "../telegram/outbound-params.js";
 export { collectTelegramStatusIssues } from "../channels/plugins/status-issues/telegram.js";
-
+export { clearAccountEntryFields } from "../channels/plugins/config-helpers.js";
+export { buildAccountScopedDmSecurityPolicy } from "../channels/plugins/helpers.js";
+export {
+  collectAllowlistProviderGroupPolicyWarnings,
+  collectOpenGroupPolicyRouteAllowlistWarnings,
+} from "../channels/plugins/group-policy-warnings.js";
+export {
+  createScopedAccountConfigAccessors,
+  createScopedChannelConfigBase,
+} from "./channel-config-helpers.js";
+export { formatAllowFromLowercase } from "./allow-from.js";
+export { createPluginRuntimeStore } from "./runtime-store.js";
 export {
   resolveAllowlistProviderRuntimeGroupPolicy,
   resolveDefaultGroupPolicy,
@@ -64,5 +66,26 @@ export {
 } from "../channels/plugins/group-mentions.js";
 export { telegramOnboardingAdapter } from "../channels/plugins/onboarding/telegram.js";
 export { TelegramConfigSchema } from "../config/zod-schema.providers-core.js";
-
 export { buildTokenChannelStatusSummary } from "./status-helpers.js";
+
+export const parseTelegramTopicConversation: FacadeModule["parseTelegramTopicConversation"] = ((
+  ...args
+) =>
+  loadFacadeModule().parseTelegramTopicConversation(
+    ...args,
+  )) as FacadeModule["parseTelegramTopicConversation"];
+
+export const singleAccountKeysToMove = createLazyFacadeArrayValue(
+  () => loadFacadeModule().singleAccountKeysToMove,
+);
+
+export const collectTelegramSecurityAuditFindings: FacadeModule["collectTelegramSecurityAuditFindings"] =
+  ((...args) =>
+    loadFacadeModule().collectTelegramSecurityAuditFindings(
+      ...args,
+    )) as FacadeModule["collectTelegramSecurityAuditFindings"];
+
+export const mergeTelegramAccountConfig: FacadeModule["mergeTelegramAccountConfig"] = ((...args) =>
+  loadFacadeModule().mergeTelegramAccountConfig(
+    ...args,
+  )) as FacadeModule["mergeTelegramAccountConfig"];

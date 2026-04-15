@@ -1,8 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach } from "vitest";
 import { listAccountIds, resolveAccount } from "./accounts.js";
-
-// Save and restore env vars
-const originalEnv = { ...process.env };
 
 beforeEach(() => {
   // Clean synology-related env vars before each test

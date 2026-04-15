@@ -1,8 +1,8 @@
 import fs from "node:fs";
-import crypto from "node:crypto";
 import path from "node:path";
 
 import { logger } from "../util/logger.js";
+import { generateId } from "../util/random.js";
 import type { WeixinMessage, MessageItem } from "../api/types.js";
 import { MessageItemType } from "../api/types.js";
 import { resolveStateDir } from "../storage/state-dir.js";
@@ -131,22 +131,8 @@ export function findAccountIdsByContextToken(
 // Message ID generation
 // ---------------------------------------------------------------------------
 
-function buildStableMessageSid(msg: WeixinMessage): string {
-  if (msg.message_id !== undefined && msg.message_id !== null) {
-    return `msg:${String(msg.message_id)}`;
-  }
-
-  const body = bodyFromItemList(msg.item_list).trim();
-  const bodyHash = body
-    ? crypto.createHash("sha1").update(body).digest("hex").slice(0, 12)
-    : "empty";
-  const seqPart = msg.seq !== undefined && msg.seq !== null ? String(msg.seq) : "?";
-  const fromPart = msg.from_user_id?.trim() || "?";
-  const tsPart =
-    msg.create_time_ms !== undefined && msg.create_time_ms !== null
-      ? String(msg.create_time_ms)
-      : "?";
-  return `fallback:${seqPart}:${fromPart}:${tsPart}:${bodyHash}`;
+function generateMessageSid(): string {
+  return generateId("openclaw-weixin");
 }
 
 /** Inbound context passed to the OpenClaw core pipeline (matches MsgContext shape). */
@@ -237,7 +223,6 @@ export function weixinMessageToMsgContext(
   opts?: WeixinInboundMediaOpts,
 ): WeixinMsgContext {
   const from_user_id = msg.from_user_id ?? "";
-  const messageSid = buildStableMessageSid(msg);
   const ctx: WeixinMsgContext = {
     Body: bodyFromItemList(msg.item_list),
     From: from_user_id,
@@ -245,7 +230,7 @@ export function weixinMessageToMsgContext(
     AccountId: accountId,
     OriginatingChannel: "openclaw-weixin",
     OriginatingTo: from_user_id,
-    MessageSid: messageSid,
+    MessageSid: generateMessageSid(),
     Timestamp: msg.create_time_ms,
     Provider: "openclaw-weixin",
     ChatType: "direct",

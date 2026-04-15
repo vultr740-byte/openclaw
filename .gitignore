@@ -4,10 +4,12 @@ node_modules
 .env.local
 docker-compose.extra.yml
 dist
+dist-runtime/
 pnpm-lock.yaml
 bun.lock
 bun.lockb
 coverage
+.artifacts/
 __pycache__/
 *.pyc
 .tsbuildinfo

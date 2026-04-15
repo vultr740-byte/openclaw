@@ -42,7 +42,7 @@ const geminiCliPlugin = {
                 openUrl: ctx.openUrl,
                 log: (msg) => ctx.runtime.log(msg),
                 note: ctx.prompter.note,
-                prompt: async (message) => String(await ctx.prompter.text({ message })),
+                prompt: async (message) => await ctx.prompter.text({ message }),
                 progress: spin,
               });
 

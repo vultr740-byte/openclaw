@@ -1,10 +1,4 @@
-export type ParsedTelegramTopicConversation = {
-  chatId: string;
-  topicId: string;
-  canonicalConversationId: string;
-};
-
-function normalizeText(value: unknown): string {
+export function normalizeConversationText(value: unknown): string {
   if (typeof value === "string") {
     return value.trim();
   }
@@ -14,8 +8,14 @@ function normalizeText(value: unknown): string {
   return "";
 }
 
+export type ParsedTelegramTopicConversation = {
+  chatId: string;
+  topicId: string;
+  canonicalConversationId: string;
+};
+
 export function parseTelegramChatIdFromTarget(raw: unknown): string | undefined {
-  const text = normalizeText(raw);
+  const text = normalizeConversationText(raw);
   if (!text) {
     return undefined;
   }

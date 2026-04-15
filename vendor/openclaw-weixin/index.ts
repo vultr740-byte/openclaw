@@ -1,27 +1,38 @@
-import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
-import { buildChannelConfigSchema } from "openclaw/plugin-sdk";
+import {
+  defineBundledChannelEntry,
+  loadBundledEntryExportSync,
+} from "openclaw/plugin-sdk/channel-entry-contract";
+import { buildChannelConfigSchema } from "openclaw/plugin-sdk/channel-config-schema";
 
-import { weixinPlugin } from "./src/channel.js";
-import { WeixinConfigSchema } from "./src/config/config-schema.js";
-import { registerWeixinCli } from "./src/log-upload.js";
-import { setWeixinRuntime } from "./src/runtime.js";
-
-const plugin = {
+export default defineBundledChannelEntry({
   id: "openclaw-weixin",
   name: "Weixin",
   description: "Weixin channel (getUpdates long-poll + sendMessage)",
-  configSchema: buildChannelConfigSchema(WeixinConfigSchema),
-  register(api: OpenClawPluginApi) {
-    if (!api?.runtime) {
-      throw new Error("[weixin] api.runtime is not available in register()");
-    }
-    setWeixinRuntime(api.runtime);
-
-    api.registerChannel({ plugin: weixinPlugin });
-    api.registerCli(({ program, config }) => registerWeixinCli({ program, config }), {
-      commands: ["openclaw-weixin"],
-    });
+  importMetaUrl: import.meta.url,
+  plugin: {
+    specifier: "./src/channel.js",
+    exportName: "weixinPlugin",
   },
-};
+  configSchema: () =>
+    buildChannelConfigSchema(
+      loadBundledEntryExportSync(import.meta.url, {
+        specifier: "./src/config/config-schema.js",
+        exportName: "WeixinConfigSchema",
+      }),
+    ),
+  runtime: {
+    specifier: "./src/runtime.js",
+    exportName: "setWeixinRuntime",
+  },
+  registerFull(api) {
+    const { assertHostCompatibility } = loadBundledEntryExportSync(import.meta.url, {
+      specifier: "./src/compat.js",
+    });
+    assertHostCompatibility(api.runtime?.version);
 
-export default plugin;
+    const { registerWeixinHttpLoginRoutes } = loadBundledEntryExportSync(import.meta.url, {
+      specifier: "./src/http-login.js",
+    });
+    registerWeixinHttpLoginRoutes(api);
+  },
+});

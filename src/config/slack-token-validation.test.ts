@@ -41,7 +41,6 @@ describe("Slack token config fields", () => {
           botToken: "xoxb-any",
           appToken: "xapp-any",
           userToken: "xoxp-any",
-          // oxlint-disable-next-line typescript/no-explicit-any
           userTokenReadOnly: "no" as any,
         },
       },
@@ -58,7 +57,6 @@ describe("Slack token config fields", () => {
         slack: {
           botToken: "xoxb-any",
           appToken: "xapp-any",
-          // oxlint-disable-next-line typescript/no-explicit-any
           userToken: 123 as any,
         },
       },

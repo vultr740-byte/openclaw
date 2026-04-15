@@ -14,7 +14,7 @@ export const HUGGINGFACE_POLICY_SUFFIXES = ["cheapest", "fastest"] as const;
  * (router decides); do not show an interactive "prefer specific backend" option.
  */
 export function isHuggingfacePolicyLocked(modelRef: string): boolean {
-  const ref = String(modelRef).trim();
+  const ref = modelRef.trim();
   return HUGGINGFACE_POLICY_SUFFIXES.some((s) => ref.endsWith(`:${s}`) || ref === s);
 }
 

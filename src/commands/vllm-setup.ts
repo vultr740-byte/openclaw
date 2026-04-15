@@ -34,11 +34,9 @@ export async function promptAndConfigureVllm(params: {
     validate: (value) => (value?.trim() ? undefined : "Required"),
   });
 
-  const baseUrl = String(baseUrlRaw ?? "")
-    .trim()
-    .replace(/\/+$/, "");
-  const apiKey = String(apiKeyRaw ?? "").trim();
-  const modelId = String(modelIdRaw ?? "").trim();
+  const baseUrl = baseUrlRaw.trim().replace(/\/+$/, "");
+  const apiKey = apiKeyRaw.trim();
+  const modelId = modelIdRaw.trim();
   const modelRef = `vllm/${modelId}`;
 
   await upsertAuthProfileWithLock({

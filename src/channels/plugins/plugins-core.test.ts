@@ -337,7 +337,6 @@ describe("directory (config-backed)", () => {
           channels: { C111: { users: ["U777"] } },
         },
       },
-      // oxlint-disable-next-line typescript/no-explicit-any
     } as any;
 
     await expectDirectoryIds(
@@ -369,7 +368,6 @@ describe("directory (config-backed)", () => {
           },
         },
       },
-      // oxlint-disable-next-line typescript/no-explicit-any
     } as any;
 
     await expectDirectoryIds(
@@ -396,7 +394,6 @@ describe("directory (config-backed)", () => {
           groups: { "-1001": {}, "*": {} },
         },
       },
-      // oxlint-disable-next-line typescript/no-explicit-any
     } as any;
 
     await expectDirectoryIds(
@@ -426,7 +423,6 @@ describe("directory (config-backed)", () => {
             },
           },
         },
-        // oxlint-disable-next-line typescript/no-explicit-any
       } as any;
 
       await expectDirectoryIds(listTelegramDirectoryPeersFromConfig, cfg, ["@alice"]);
@@ -465,7 +461,6 @@ describe("directory (config-backed)", () => {
           groups: { "-1001": {} },
         },
       },
-      // oxlint-disable-next-line typescript/no-explicit-any
     } as any;
 
     await expectDirectoryIds(listSlackDirectoryPeersFromConfig, cfg, ["user:u123"]);
@@ -484,7 +479,6 @@ describe("directory (config-backed)", () => {
           groups: { "999@g.us": { requireMention: true }, "*": {} },
         },
       },
-      // oxlint-disable-next-line typescript/no-explicit-any
     } as any;
 
     await expectDirectoryIds(listWhatsAppDirectoryPeersFromConfig, cfg, ["+15550000000"]);
@@ -521,7 +515,6 @@ describe("directory (config-backed)", () => {
           groups: { "111@g.us": {}, "222@g.us": {}, "333@s.whatsapp.net": {} },
         },
       },
-      // oxlint-disable-next-line typescript/no-explicit-any
     } as any;
 
     const slackPeers = await listSlackDirectoryPeersFromConfig({

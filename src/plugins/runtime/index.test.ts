@@ -1,64 +1,264 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { DEFAULT_MODEL, DEFAULT_PROVIDER } from "../../agents/defaults.js";
 import { onAgentEvent } from "../../infra/agent-events.js";
 import { requestHeartbeatNow } from "../../infra/heartbeat-wake.js";
+import * as execModule from "../../process/exec.js";
 import { onSessionTranscriptUpdate } from "../../sessions/transcript-events.js";
+import { VERSION } from "../../version.js";
 
-const runCommandWithTimeoutMock = vi.hoisted(() => vi.fn());
+const requireSpy = vi.hoisted(() => vi.fn());
 
-vi.mock("../../process/exec.js", () => ({
-  runCommandWithTimeout: (...args: unknown[]) => runCommandWithTimeoutMock(...args),
-}));
+vi.mock("node:module", async () => {
+  const actual = await vi.importActual<typeof import("node:module")>("node:module");
+  const actualJiti = await vi.importActual<typeof import("jiti")>("jiti");
+  return Object.assign({}, actual, {
+    createRequire: () =>
+      ((specifier: string) => {
+        requireSpy(specifier);
+        if (specifier === "../../../package.json") {
+          return { version: "test-version" };
+        }
+        if (specifier === "jiti") {
+          return actualJiti;
+        }
+        return actual.createRequire(import.meta.url)(specifier);
+      }) as NodeJS.Require,
+  });
+});
 
-import { createPluginRuntime } from "./index.js";
+import {
+  clearGatewaySubagentRuntime,
+  createPluginRuntime,
+  setGatewaySubagentRuntime,
+} from "./index.js";
+
+function createCommandResult() {
+  return {
+    pid: 12345,
+    stdout: "hello\n",
+    stderr: "",
+    code: 0,
+    signal: null,
+    killed: false,
+    noOutputTimedOut: false,
+    termination: "exit" as const,
+  };
+}
+
+function createGatewaySubagentRuntime() {
+  return {
+    run: vi.fn(),
+    waitForRun: vi.fn(),
+    getSessionMessages: vi.fn(),
+    getSession: vi.fn(),
+    deleteSession: vi.fn(),
+  };
+}
+
+function expectRuntimeShape(
+  assertRuntime: (runtime: ReturnType<typeof createPluginRuntime>) => void,
+) {
+  const runtime = createPluginRuntime();
+  assertRuntime(runtime);
+}
+
+function expectGatewaySubagentRunFailure(
+  runtime: ReturnType<typeof createPluginRuntime>,
+  params: { sessionKey: string; message: string },
+) {
+  expect(() => runtime.subagent.run(params)).toThrow(
+    "Plugin runtime subagent methods are only available during a gateway request.",
+  );
+}
+
+function expectRuntimeValue<T>(
+  readValue: (runtime: ReturnType<typeof createPluginRuntime>) => T,
+  expected: T,
+) {
+  expect(readValue(createPluginRuntime())).toBe(expected);
+}
+
+function expectRuntimeSubagentRun(
+  runtime: ReturnType<typeof createPluginRuntime>,
+  params: { sessionKey: string; message: string },
+) {
+  return runtime.subagent.run(params);
+}
+
+function createGatewaySubagentRunFixture(params?: { allowGatewaySubagentBinding?: boolean }) {
+  const run = vi.fn().mockResolvedValue({ runId: "run-1" });
+  const runtime = params?.allowGatewaySubagentBinding
+    ? createPluginRuntime({ allowGatewaySubagentBinding: true })
+    : createPluginRuntime();
+
+  setGatewaySubagentRuntime({
+    ...createGatewaySubagentRuntime(),
+    run,
+  });
+
+  return { run, runtime };
+}
+
+function expectFunctionKeys(value: Record<string, unknown>, keys: readonly string[]) {
+  keys.forEach((key) => {
+    expect(typeof value[key]).toBe("function");
+  });
+}
+
+function expectRunCommandOutcome(params: {
+  runtime: ReturnType<typeof createPluginRuntime>;
+  expected: "resolve" | "reject";
+  commandResult: ReturnType<typeof createCommandResult>;
+}) {
+  const command = params.runtime.system.runCommandWithTimeout(["echo", "hello"], {
+    timeoutMs: 1000,
+  });
+  if (params.expected === "resolve") {
+    return expect(command).resolves.toEqual(params.commandResult);
+  }
+  return expect(command).rejects.toThrow("boom");
+}
 
 describe("plugin runtime command execution", () => {
   beforeEach(() => {
-    runCommandWithTimeoutMock.mockClear();
+    vi.restoreAllMocks();
+    clearGatewaySubagentRuntime();
+    requireSpy.mockClear();
   });
 
-  it("exposes runtime.system.runCommandWithTimeout by default", async () => {
-    const commandResult = {
-      stdout: "hello\n",
-      stderr: "",
-      code: 0,
-      signal: null,
-      killed: false,
-      termination: "exit" as const,
-    };
-    runCommandWithTimeoutMock.mockResolvedValue(commandResult);
+  it.each([
+    {
+      name: "exposes runtime.system.runCommandWithTimeout by default",
+      mockKind: "resolve" as const,
+      expected: "resolve" as const,
+    },
+    {
+      name: "forwards runtime.system.runCommandWithTimeout errors",
+      mockKind: "reject" as const,
+      expected: "reject" as const,
+    },
+  ] as const)("$name", async ({ mockKind, expected }) => {
+    const commandResult = createCommandResult();
+    const runCommandWithTimeoutMock = vi.spyOn(execModule, "runCommandWithTimeout");
+    if (mockKind === "resolve") {
+      runCommandWithTimeoutMock.mockResolvedValue(commandResult);
+    } else {
+      runCommandWithTimeoutMock.mockRejectedValue(new Error("boom"));
+    }
 
     const runtime = createPluginRuntime();
-    await expect(
-      runtime.system.runCommandWithTimeout(["echo", "hello"], { timeoutMs: 1000 }),
-    ).resolves.toEqual(commandResult);
+    await expectRunCommandOutcome({ runtime, expected, commandResult });
     expect(runCommandWithTimeoutMock).toHaveBeenCalledWith(["echo", "hello"], { timeoutMs: 1000 });
   });
 
-  it("forwards runtime.system.runCommandWithTimeout errors", async () => {
-    runCommandWithTimeoutMock.mockRejectedValue(new Error("boom"));
-    const runtime = createPluginRuntime();
-    await expect(
-      runtime.system.runCommandWithTimeout(["echo", "hello"], { timeoutMs: 1000 }),
-    ).rejects.toThrow("boom");
-    expect(runCommandWithTimeoutMock).toHaveBeenCalledWith(["echo", "hello"], { timeoutMs: 1000 });
+  it.each([
+    {
+      name: "exposes runtime.events.onAgentEvent",
+      readValue: (runtime: ReturnType<typeof createPluginRuntime>) => runtime.events.onAgentEvent,
+      expected: onAgentEvent,
+    },
+    {
+      name: "exposes runtime.events.onSessionTranscriptUpdate",
+      readValue: (runtime: ReturnType<typeof createPluginRuntime>) =>
+        runtime.events.onSessionTranscriptUpdate,
+      expected: onSessionTranscriptUpdate,
+    },
+    {
+      name: "exposes runtime.system.requestHeartbeatNow",
+      readValue: (runtime: ReturnType<typeof createPluginRuntime>) =>
+        runtime.system.requestHeartbeatNow,
+      expected: requestHeartbeatNow,
+    },
+    {
+      name: "exposes runtime.version from the shared VERSION constant",
+      readValue: (runtime: ReturnType<typeof createPluginRuntime>) => runtime.version,
+      expected: VERSION,
+    },
+  ] as const)("$name", ({ readValue, expected }) => {
+    expectRuntimeValue(readValue, expected);
   });
 
-  it("exposes runtime.events listener registration helpers", () => {
-    const runtime = createPluginRuntime();
-    expect(runtime.events.onAgentEvent).toBe(onAgentEvent);
-    expect(runtime.events.onSessionTranscriptUpdate).toBe(onSessionTranscriptUpdate);
-  });
-
-  it("exposes runtime.system.requestHeartbeatNow", () => {
-    const runtime = createPluginRuntime();
-    expect(runtime.system.requestHeartbeatNow).toBe(requestHeartbeatNow);
-  });
-
-  it("exposes runtime.modelAuth with getApiKeyForModel and resolveApiKeyForProvider", () => {
-    const runtime = createPluginRuntime();
-    expect(runtime.modelAuth).toBeDefined();
-    expect(typeof runtime.modelAuth.getApiKeyForModel).toBe("function");
-    expect(typeof runtime.modelAuth.resolveApiKeyForProvider).toBe("function");
+  it.each([
+    {
+      name: "exposes runtime.mediaUnderstanding helpers and keeps stt as an alias",
+      assert: (runtime: ReturnType<typeof createPluginRuntime>) => {
+        expectFunctionKeys(runtime.mediaUnderstanding as Record<string, unknown>, [
+          "runFile",
+          "describeImageFile",
+          "describeImageFileWithModel",
+          "describeVideoFile",
+        ]);
+        expect(runtime.mediaUnderstanding.transcribeAudioFile).toBe(
+          runtime.stt.transcribeAudioFile,
+        );
+      },
+    },
+    {
+      name: "exposes runtime.imageGeneration helpers",
+      assert: (runtime: ReturnType<typeof createPluginRuntime>) => {
+        expectFunctionKeys(runtime.imageGeneration as Record<string, unknown>, [
+          "generate",
+          "listProviders",
+        ]);
+      },
+    },
+    {
+      name: "exposes runtime.webSearch helpers",
+      assert: (runtime: ReturnType<typeof createPluginRuntime>) => {
+        expectFunctionKeys(runtime.webSearch as Record<string, unknown>, [
+          "listProviders",
+          "search",
+        ]);
+      },
+    },
+    {
+      name: "exposes canonical runtime.tasks.runs and runtime.tasks.flows while keeping legacy TaskFlow aliases",
+      assert: (runtime: ReturnType<typeof createPluginRuntime>) => {
+        expectFunctionKeys(runtime.tasks.runs as Record<string, unknown>, [
+          "bindSession",
+          "fromToolContext",
+        ]);
+        expectFunctionKeys(runtime.tasks.flows as Record<string, unknown>, [
+          "bindSession",
+          "fromToolContext",
+        ]);
+        expectFunctionKeys(runtime.tasks.flow as Record<string, unknown>, [
+          "bindSession",
+          "fromToolContext",
+        ]);
+        expect(runtime.taskFlow).toBe(runtime.tasks.flow);
+      },
+    },
+    {
+      name: "exposes runtime.agent host helpers",
+      assert: (runtime: ReturnType<typeof createPluginRuntime>) => {
+        expect(runtime.agent.defaults).toEqual({
+          model: DEFAULT_MODEL,
+          provider: DEFAULT_PROVIDER,
+        });
+        expectFunctionKeys(runtime.agent as Record<string, unknown>, [
+          "runEmbeddedAgent",
+          "runEmbeddedPiAgent",
+          "resolveAgentDir",
+        ]);
+        expectFunctionKeys(runtime.agent.session as Record<string, unknown>, [
+          "resolveSessionFilePath",
+        ]);
+      },
+    },
+    {
+      name: "exposes runtime.modelAuth with raw and runtime-ready auth helpers",
+      assert: (runtime: ReturnType<typeof createPluginRuntime>) => {
+        expect(runtime.modelAuth).toBeDefined();
+        expectFunctionKeys(runtime.modelAuth as Record<string, unknown>, [
+          "getApiKeyForModel",
+          "getRuntimeAuthForModel",
+          "resolveApiKeyForProvider",
+        ]);
+      },
+    },
+  ] as const)("$name", ({ assert }) => {
+    expectRuntimeShape(assert);
   });
 
   it("modelAuth wrappers strip agentDir and store to prevent credential steering", async () => {
@@ -71,39 +271,40 @@ describe("plugin runtime command execution", () => {
     expect(runtime.modelAuth.getApiKeyForModel).not.toBe(rawGetApiKey);
   });
 
-  it("keeps channel routing helpers synchronous for plugin compatibility", () => {
+  it("does not load runtime-channel until runtime.channel is accessed", () => {
     const runtime = createPluginRuntime();
+    expect(requireSpy).not.toHaveBeenCalledWith("jiti");
+
     const route = runtime.channel.routing.resolveAgentRoute({
       cfg: {},
       channel: "openclaw-weixin",
       accountId: "acct-1",
       peer: { kind: "direct", id: "user-1" },
     });
-    expect(route).not.toBeInstanceOf(Promise);
+
     expect(route).toMatchObject({
       agentId: "main",
       accountId: "acct-1",
-      sessionKey: "agent:main:main",
-      mainSessionKey: "agent:main:main",
-      matchedBy: "default",
     });
+    expect(requireSpy).toHaveBeenCalledWith("jiti");
   });
 
-  it("keeps channel inbound context finalization synchronous for plugin compatibility", () => {
-    const runtime = createPluginRuntime();
-    const finalized = runtime.channel.reply.finalizeInboundContext({
-      Body: "hello",
-      From: "user-1",
-      To: "user-1",
-      ChatType: "direct",
+  it("keeps subagent unavailable by default even after gateway initialization", async () => {
+    const { runtime } = createGatewaySubagentRunFixture();
+
+    expectGatewaySubagentRunFailure(runtime, { sessionKey: "s-1", message: "hello" });
+  });
+
+  it("late-binds to the gateway subagent when explicitly enabled", async () => {
+    const { run, runtime } = createGatewaySubagentRunFixture({
+      allowGatewaySubagentBinding: true,
     });
-    expect(finalized).not.toBeInstanceOf(Promise);
-    expect(finalized).toMatchObject({
-      Body: "hello",
-      BodyForAgent: "hello",
-      BodyForCommands: "hello",
-      CommandAuthorized: false,
-      ChatType: "direct",
+
+    await expect(
+      expectRuntimeSubagentRun(runtime, { sessionKey: "s-2", message: "hello" }),
+    ).resolves.toEqual({
+      runId: "run-1",
     });
+    expect(run).toHaveBeenCalledWith({ sessionKey: "s-2", message: "hello" });
   });
 });

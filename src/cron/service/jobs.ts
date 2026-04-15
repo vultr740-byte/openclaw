@@ -114,6 +114,10 @@ function isFiniteTimestamp(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value);
 }
 
+export function hasScheduledNextRunAtMs(value: unknown): value is number {
+  return isFiniteTimestamp(value) && value > 0;
+}
+
 function resolveEveryAnchorMs(params: {
   schedule: { everyMs: number; anchorMs?: number };
   fallbackAnchorMs: number;
