@@ -143,4 +143,17 @@ describe("createOpenClawCodingTools", () => {
 
     expect(offenders).toEqual([]);
   });
+
+  it("keeps gateway available for owner senders under the coding profile", () => {
+    const tools = createOpenClawCodingTools({
+      senderIsOwner: true,
+      config: {
+        tools: {
+          profile: "coding",
+        },
+      },
+    });
+
+    expect(tools.some((tool) => tool.name === "gateway")).toBe(true);
+  });
 });

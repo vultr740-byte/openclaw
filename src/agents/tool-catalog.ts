@@ -251,7 +251,7 @@ const CORE_TOOL_DEFINITIONS: CoreToolDefinition[] = [
     label: "gateway",
     description: "Gateway control",
     sectionId: "automation",
-    profiles: [],
+    profiles: ["coding"],
     includeInOpenClawGroup: true,
   },
   {
