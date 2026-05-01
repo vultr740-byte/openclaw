@@ -4,6 +4,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  realpathSync,
   readFileSync,
   rmSync,
   writeFileSync,
@@ -34,6 +35,7 @@ function runEntrypointBootstrap(params: {
   templateAgentsDefaults?: {
     maxConcurrent?: number;
     subagents?: { maxConcurrent?: number };
+    imageGenerationModel?: string | { primary?: string; fallbacks?: string[] };
   };
 }) {
   const dir = mkdtempSync(path.join(os.tmpdir(), "openclaw-entrypoint-test-"));
@@ -310,6 +312,34 @@ function runEntrypointPrelude(params: { env?: Record<string, string | undefined>
   });
 }
 
+function runEntrypointPreludeInTempCwd(params: {
+  env?: Record<string, string | undefined>;
+  setup?: (cwd: string) => void;
+  input: string;
+}) {
+  const dir = mkdtempSync(path.join(os.tmpdir(), "openclaw-entrypoint-prelude-test-"));
+  createdTempDirs.push(dir);
+  params.setup?.(dir);
+
+  const entrypointSource = readFileSync(
+    path.join(process.cwd(), "scripts/docker-entrypoint.sh"),
+    "utf8",
+  );
+  const preludeMatch = entrypointSource.match(/^([\s\S]*?)\nif \[ "\$\(id -u\)" = "0" \]; then\n/);
+  expect(preludeMatch, "failed to find shell prelude in scripts/docker-entrypoint.sh").toBeTruthy();
+  const prelude = preludeMatch ? preludeMatch[1] : "";
+
+  return spawnSync("bash", ["-s"], {
+    cwd: dir,
+    env: {
+      ...process.env,
+      ...params.env,
+    },
+    encoding: "utf8",
+    input: `${prelude}\n${params.input}\n`,
+  });
+}
+
 describe("docker-entrypoint channel bootstrap", () => {
   it("calls the internal bootstrap command with public Discord env vars", () => {
     const { result, invocations } = runEntrypointBootstrapFunctions({
@@ -421,20 +451,66 @@ describe("docker-entrypoint weixin slim bootstrap", () => {
       "https://openclaw-production-1691.up.railway.app",
     ]);
   });
+
+  it("keeps the configured image generation provider enabled in weixin slim mode", () => {
+    const nextConfig = runEntrypointBootstrap({
+      env: {
+        OPENCLAW_BOOTSTRAP_CHANNEL: "weixin",
+        OPENCLAW_SLIM_MODE: "1",
+        OPENCLAW_GATEWAY_TOKEN: "gateway-token",
+      },
+      templateAgentsDefaults: {
+        imageGenerationModel: {
+          primary: "openai/gpt-image-2",
+        },
+      },
+    }) as {
+      plugins?: {
+        allow?: unknown;
+        entries?: Record<string, { enabled?: boolean }>;
+      };
+    };
+
+    expect(nextConfig.plugins?.allow).toEqual(["openclaw-weixin", "openai"]);
+    expect(nextConfig.plugins?.entries?.["openclaw-weixin"]?.enabled).toBe(true);
+    expect(nextConfig.plugins?.entries?.openai?.enabled).toBe(true);
+  });
 });
 
 describe("docker-entrypoint bundled plugin discovery", () => {
-  it("points weixin bootstrap at the vendored bundled plugin directory by default", () => {
-    const expectedBundledPluginsDir = path.join(process.cwd(), "vendor");
-    const result = runEntrypointPrelude({
+  it("points weixin bootstrap at the slim bundled plugin directory when available", () => {
+    let expectedBundledPluginsDir = "";
+    const result = runEntrypointPreludeInTempCwd({
       env: {
         OPENCLAW_BOOTSTRAP_CHANNEL: "weixin",
+      },
+      setup: (cwd) => {
+        expectedBundledPluginsDir = path.join(cwd, "slim", "vendor");
+        mkdirSync(expectedBundledPluginsDir, { recursive: true });
+        mkdirSync(path.join(cwd, "vendor"), { recursive: true });
       },
       input: 'printf "%s\\n" "${OPENCLAW_BUNDLED_PLUGINS_DIR:-}"',
     });
 
     expect(result.status, result.stderr || result.stdout).toBe(0);
-    expect(result.stdout.trim()).toBe(expectedBundledPluginsDir);
+    expect(realpathSync(result.stdout.trim())).toBe(realpathSync(expectedBundledPluginsDir));
+  });
+
+  it("falls back to the legacy vendored plugin directory for weixin bootstrap", () => {
+    let expectedBundledPluginsDir = "";
+    const result = runEntrypointPreludeInTempCwd({
+      env: {
+        OPENCLAW_BOOTSTRAP_CHANNEL: "weixin",
+      },
+      setup: (cwd) => {
+        expectedBundledPluginsDir = path.join(cwd, "vendor");
+        mkdirSync(expectedBundledPluginsDir, { recursive: true });
+      },
+      input: 'printf "%s\\n" "${OPENCLAW_BUNDLED_PLUGINS_DIR:-}"',
+    });
+
+    expect(result.status, result.stderr || result.stdout).toBe(0);
+    expect(realpathSync(result.stdout.trim())).toBe(realpathSync(expectedBundledPluginsDir));
   });
 
   it("does not override an explicit bundled plugin directory", () => {
@@ -466,6 +542,9 @@ describe("docker-entrypoint telegram slim bootstrap", () => {
         maxConcurrent: 4,
         subagents: {
           maxConcurrent: 8,
+        },
+        imageGenerationModel: {
+          primary: "openai/gpt-image-2",
         },
       },
       templateTelegram: {
@@ -503,9 +582,10 @@ describe("docker-entrypoint telegram slim bootstrap", () => {
     expect(nextConfig.channels?.telegram?.dmPolicy).toBe("allowlist");
     expect(nextConfig.channels?.telegram?.allowFrom).toEqual(["123456789"]);
     expect(nextConfig.plugins?.enabled).toBe(true);
-    expect(nextConfig.plugins?.allow).toEqual(["telegram"]);
+    expect(nextConfig.plugins?.allow).toEqual(["telegram", "openai"]);
     expect(nextConfig.plugins?.slots?.memory).toBe("none");
     expect(nextConfig.plugins?.entries?.telegram?.enabled).toBe(true);
+    expect(nextConfig.plugins?.entries?.openai?.enabled).toBe(true);
     expect(nextConfig.plugins?.entries?.acpx?.enabled).toBe(false);
     expect(nextConfig.gateway?.controlUi?.allowedOrigins).toEqual([
       "https://openclaw-telegram.up.railway.app",

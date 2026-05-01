@@ -84,6 +84,11 @@ maybe_configure_bundled_plugins_dir() {
   if ! has_weixin_bootstrap_channel; then
     return 0
   fi
+  bundled_plugins_dir="$(pwd)/slim/vendor"
+  if [ -d "$bundled_plugins_dir" ]; then
+    export OPENCLAW_BUNDLED_PLUGINS_DIR="$bundled_plugins_dir"
+    return 0
+  fi
   bundled_plugins_dir="$(pwd)/vendor"
   if [ -d "$bundled_plugins_dir" ]; then
     export OPENCLAW_BUNDLED_PLUGINS_DIR="$bundled_plugins_dir"
@@ -283,6 +288,38 @@ function normalizeAllowFromEntries(value) {
   return value.map((entry) => String(entry).trim()).filter(Boolean);
 }
 
+function collectProviderIdsFromModelConfig(value) {
+  const refs = [];
+  if (typeof value === "string") {
+    refs.push(value);
+  } else if (value && typeof value === "object" && !Array.isArray(value)) {
+    refs.push(value.primary);
+    if (Array.isArray(value.fallbacks)) {
+      refs.push(...value.fallbacks);
+    }
+  }
+
+  const providerIds = [];
+  const seen = new Set();
+  for (const ref of refs) {
+    const trimmed = String(ref ?? "").trim();
+    if (!trimmed || containsEnvReference(trimmed)) {
+      continue;
+    }
+    const slash = trimmed.indexOf("/");
+    if (slash <= 0) {
+      continue;
+    }
+    const providerId = trimmed.slice(0, slash).trim();
+    if (!providerId || seen.has(providerId)) {
+      continue;
+    }
+    seen.add(providerId);
+    providerIds.push(providerId);
+  }
+  return providerIds;
+}
+
 function hasConfiguredTelegramToken(channelConfig) {
   if (!channelConfig || typeof channelConfig !== "object" || Array.isArray(channelConfig)) {
     return false;
@@ -441,6 +478,41 @@ try {
         : {};
     const nextAcp =
       root.acp && typeof root.acp === "object" && !Array.isArray(root.acp) ? root.acp : {};
+    const configuredImageGenerationProviderIds = collectProviderIdsFromModelConfig(
+      nextDefaults.imageGenerationModel,
+    );
+
+    function applySlimPluginPolicy(channelPluginIds) {
+      const allow = [];
+      const seen = new Set();
+      for (const pluginId of [...channelPluginIds, ...configuredImageGenerationProviderIds]) {
+        const normalized = String(pluginId ?? "").trim();
+        if (!normalized || seen.has(normalized)) {
+          continue;
+        }
+        seen.add(normalized);
+        allow.push(normalized);
+        nextPluginEntries[normalized] = {
+          ...(nextPluginEntries[normalized] &&
+          typeof nextPluginEntries[normalized] === "object" &&
+          !Array.isArray(nextPluginEntries[normalized])
+            ? nextPluginEntries[normalized]
+            : {}),
+          enabled: true,
+        };
+      }
+
+      nextPlugins.enabled = true;
+      nextPlugins.allow = allow;
+      nextPlugins.slots = {
+        ...(nextPlugins.slots && typeof nextPlugins.slots === "object" && !Array.isArray(nextPlugins.slots)
+          ? nextPlugins.slots
+          : {}),
+        memory: "none",
+      };
+      nextPlugins.entries = nextPluginEntries;
+      root.plugins = nextPlugins;
+    }
 
     if (controlUiAllowedOrigins !== null) {
       if (shouldMergeDerivedControlUiAllowedOrigins) {
@@ -508,26 +580,9 @@ try {
       };
       root.channels = nextChannels;
 
-      nextPlugins.enabled = true;
-      nextPlugins.allow = ["openclaw-weixin"];
-      nextPlugins.slots = {
-        ...(nextPlugins.slots && typeof nextPlugins.slots === "object" && !Array.isArray(nextPlugins.slots)
-          ? nextPlugins.slots
-          : {}),
-        memory: "none",
-      };
       delete nextPluginEntries.telegram;
       delete nextPluginEntries.acpx;
-      nextPluginEntries["openclaw-weixin"] = {
-        ...(nextPluginEntries["openclaw-weixin"] &&
-        typeof nextPluginEntries["openclaw-weixin"] === "object" &&
-        !Array.isArray(nextPluginEntries["openclaw-weixin"])
-          ? nextPluginEntries["openclaw-weixin"]
-          : {}),
-        enabled: true,
-      };
-      nextPlugins.entries = nextPluginEntries;
-      root.plugins = nextPlugins;
+      applySlimPluginPolicy(["openclaw-weixin"]);
     }
 
     if (slimModeEnabled && bootstrapChannel === "telegram") {
@@ -576,22 +631,6 @@ try {
       }
       root.channels = nextChannels;
 
-      nextPlugins.enabled = true;
-      nextPlugins.allow = ["telegram"];
-      nextPlugins.slots = {
-        ...(nextPlugins.slots && typeof nextPlugins.slots === "object" && !Array.isArray(nextPlugins.slots)
-          ? nextPlugins.slots
-          : {}),
-        memory: "none",
-      };
-      nextPluginEntries.telegram = {
-        ...(nextPluginEntries.telegram &&
-        typeof nextPluginEntries.telegram === "object" &&
-        !Array.isArray(nextPluginEntries.telegram)
-          ? nextPluginEntries.telegram
-          : {}),
-        enabled: true,
-      };
       nextPluginEntries.acpx = {
         ...(nextPluginEntries.acpx &&
         typeof nextPluginEntries.acpx === "object" &&
@@ -610,8 +649,7 @@ try {
           enabled: false,
         };
       }
-      nextPlugins.entries = nextPluginEntries;
-      root.plugins = nextPlugins;
+      applySlimPluginPolicy(["telegram"]);
     }
 
     if (!xaiConfigured) {

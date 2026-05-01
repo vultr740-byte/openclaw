@@ -112,6 +112,10 @@ RUN for dir in /app/extensions /app/.agent /app/.agents; do \
 # Use the Docker-specific build pipeline to avoid unnecessary type-only build
 # work in image builds, and give Node enough heap for the bundle step.
 RUN NODE_OPTIONS=--max-old-space-size=4096 pnpm build:docker
+RUN mkdir -p /app/slim/vendor/openclaw-weixin /app/slim/vendor/openai \
+ && cp -R /app/vendor/openclaw-weixin/. /app/slim/vendor/openclaw-weixin/ \
+ && cp -R /app/dist/extensions/openai/. /app/slim/vendor/openai/ \
+ && cp /app/dist/*.js /app/slim/
 # Optionally skip Control UI assets in Docker builds.
 # Default to skipping; set OPENCLAW_BUILD_UI=1 to include Control UI assets.
 ARG OPENCLAW_BUILD_UI="0"
