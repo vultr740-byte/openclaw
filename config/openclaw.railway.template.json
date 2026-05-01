@@ -16,6 +16,9 @@
       "model": {
         "primary": "openai/${OPENAI_MODEL}"
       },
+      "imageGenerationModel": {
+        "primary": "openai/gpt-image-2"
+      },
       "models": {
         "xai/${XAI_MODEL}": {
           "streaming": false
