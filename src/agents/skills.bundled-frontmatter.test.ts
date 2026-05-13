@@ -10,6 +10,7 @@ describe("bundled skill frontmatter", () => {
   it("keeps shipped bundled skills parseable from their files", async () => {
     const skillPaths = [
       "skills/privy-agent-onboarding/SKILL.md",
+      "skills/guizang-ppt-skill/SKILL.md",
       "skills/taskflow/SKILL.md",
       "skills/taskflow-inbox-triage/SKILL.md",
     ] as const;
